@@ -637,6 +637,16 @@
               自然语言处理题库
               <small>自然语言处理相关知识 </small>
           </button>
+          <button id="speech-bank-btn" class="mode-btn" style="background: linear-gradient(135deg, #e67e22, #d35400); color: white;">
+              <i class="fas fa-microphone"></i>
+              语音识别题库
+              <small>语音识别相关知识</small>
+          </button>
+          <button id="image-bank-btn" class="mode-btn" style="background: linear-gradient(135deg, #16a085, #1abc9c); color: white;">
+              <i class="fas fa-images"></i>
+              数字图像处理题库
+              <small>数字图像处理相关知识</small>
+          </button>
       </div>
   </div>
 
@@ -11061,6 +11071,100 @@
         ],
         "answer": "A B"
     }
+],
+          speech: [
+    {
+        "id": 1,
+        "question": "语音识别中，声学模型和语言模型的作用分别是（ ）",
+        "options": [
+            "A) 将语音特征转换为音素、将音素序列转换为词序列",
+            "B) 将语音特征转为音素、约束识别句子的词组合关系",
+            "C) 将语音特征转换为词、将音素序列转换为词序列",
+            "D) 将语音特征转换为词、约束识别句子的词组合关系"
+        ],
+        "answer": "B"
+    },
+    {
+        "id": 2,
+        "question": "声波最主要的两个特性是（ ）",
+        "options": [
+            "A) 声强与频率",
+            "B) 声强与音调",
+            "C) 声响与频率",
+            "D) 声响与音调"
+        ],
+        "answer": "A"
+    },
+    {
+        "id": 3,
+        "question": "三元语言模型的词概率公式为（ ）",
+        "options": [
+            "A) P(w)",
+            "B) P(w|w_{i-1})",
+            "C) P(w_i|w_{i-2}w_{i-1})",
+            "D) P(w_i|w_{i-3}w_{i-2}w_{i-1})"
+        ],
+        "answer": "C"
+    },
+    {
+        "id": 4,
+        "question": "若采用HMM来描述音素的发音过程，通常采用多少个隐状态表示，其中有效状态多少个？（ ）",
+        "options": [
+            "A) 3,2",
+            "B) 2,3",
+            "C) 5,2",
+            "D) 5,3"
+        ],
+        "answer": "D"
+    },
+    {
+        "id": 5,
+        "question": "下列哪个不是语音识别中的端到端模型？（ ）",
+        "options": [
+            "A) CTC",
+            "B) Transformer",
+            "C) CNN",
+            "D) RNN-T"
+        ],
+        "answer": "C"
+    }
+],
+          image: [
+  {
+    "id": 1,
+    "question": "下面哪些效果无法通过卷积实现？",
+    "options": ["A. 降噪", "B. 边缘检测", "C. 平滑", "D. 把灰度图像彩色化"],
+    "answer": "D"
+  },
+  {
+    "id": 2,
+    "question": "下列关于OTSU算法中“类间方差”的描述错误的是（ ）",
+    "options": [
+      "A. 类间方差达到最大的情况下即为最优二值化值",
+      "B. 类间方差达到最小的情况下即为最优二值化值",
+      "C. 类间方差越大，说明构成图像的两部分的差别越大，意味着错分概率最小",
+      "D. 类间方差是根据前景部分的方差和背景部分的方差计算得到的"
+    ],
+    "answer": "B"
+  },
+  {
+    "id": 3,
+    "question": "拉普拉斯算子（ ）",
+    "options": ["A. 是一阶微分算子", "B. 是二阶微分算子", "C. 包括一个模板", "D. 包括两个模板"],
+    "answer": "B C"
+  },
+  {
+    "id": 4,
+    "question": "下列空域平滑滤波器中，属于线性滤波的是（ ）",
+    "options": ["A. 均值滤波", "B. 中值滤波", "C. 双边滤波", "D. 高斯滤波"],
+    "answer": "A D"
+  },
+  {
+    "id": 5,
+    "question": "区域生长方法的实现有三个关键点：",
+    "options": ["A. 种子点的选取", "B. 生长准则的确定", "C. 区域生长停止的条件"],
+    "answer": "A B C"
+  }
 ]
 }; 
 
@@ -11081,7 +11185,7 @@
       let startTime = null; // 记录考试开始时间
 
       // 密码保护逻辑
-      const password = 'jy5247';
+      const password = '101';
       const passwordProtection = document.getElementById('password-protection');
       const bankSelection = document.getElementById('bank-selection');
       const modeSelection = document.getElementById('mode-selection');
@@ -11141,6 +11245,20 @@
           modeSelection.classList.remove('hidden');
       });
 
+      document.getElementById('speech-bank-btn').addEventListener('click', function() {
+          selectedBank = 'speech';
+          originalQuestions = questionBanks[selectedBank];
+          bankSelection.classList.add('hidden');
+          modeSelection.classList.remove('hidden');
+      });
+
+      document.getElementById('image-bank-btn').addEventListener('click', function() {
+          selectedBank = 'image';
+          originalQuestions = questionBanks[selectedBank];
+          bankSelection.classList.add('hidden');
+          modeSelection.classList.remove('hidden');
+      });
+
       // 模式选择层返回题库选择按钮
       document.getElementById('mode-back-btn').addEventListener('click', function() {
           modeSelection.classList.add('hidden');
@@ -11161,7 +11279,13 @@
           const questionCountInput = document.getElementById('question-count-input');
           if (countInfo && questionCountInput) {
               const maxCount = originalQuestions.length;
-              const bankName = selectedBank === 'ict' ? 'ICT-昇腾AI题库' : '自然语言处理题库';
+              const bankNames = {
+                  'ict': 'ICT-昇腾AI题库',
+                  'nlp': '自然语言处理题库',
+                  'speech': '语音识别题库',
+                  'image': '数字图像处理题库'
+              };
+              const bankName = bankNames[selectedBank] || 'ICT-昇腾AI题库';
               countInfo.textContent = `题库总数：${maxCount}题 (${bankName})`;
               questionCountInput.max = maxCount;
               questionCountInput.placeholder = `请输入题目数量（1-${maxCount}）`;
@@ -11427,7 +11551,13 @@
           // 显示当前模式和题库信息
           const modeIcon = currentMode === 'practice' ? '<i class="fas fa-book"></i>' : '<i class="fas fa-clipboard-check"></i>';
           const modeName = currentMode === 'practice' ? '练习模式' : '考试模式';
-          const bankName = selectedBank === 'ict' ? 'ICT-昇腾AI题库' : '自然语言处理题库';
+          const bankNames = {
+              'ict': 'ICT-昇腾AI题库',
+              'nlp': '自然语言处理题库',
+              'speech': '语音识别题库',
+              'image': '数字图像处理题库'
+          };
+          const bankName = bankNames[selectedBank] || 'ICT-昇腾AI题库';
           currentModeDisplay.innerHTML = `${modeIcon} ${modeName} - ${bankName}`;
           currentModeDisplay.style.color = currentMode === 'practice' ? '#2ecc71' : '#3498db';
           
@@ -12020,7 +12150,6 @@
               <div id="fill-controls" style="text-align:center; margin-bottom:15px;">
                   <div id="fill-summary" style="margin-bottom:12px; font-weight:600; color:#34495e;"></div>
                   <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center;">
-                      <button id="check-all-btn" class="btn">检查全部</button>
                       <button id="reset-fill-btn" class="btn btn-secondary">重置</button>
                       <button id="fill-config-btn" class="btn btn-secondary" style="background:linear-gradient(135deg,#8e44ad,#9b59b6);">
                           <i class="fas fa-cog"></i> 重新设置
@@ -12029,8 +12158,41 @@
                   </div>
               </div>
 
+              <!-- 填空题结果统计 -->
+              <div id="fill-results" style="margin-top:30px; padding:20px; border-radius:10px; background-color:#ffffff; box-shadow:0 3px 15px rgba(0,0,0,0.08); display:none;">
+                  <div class="result-header">
+                      <h2 style="margin:0;"><i class="fas fa-chart-bar"></i> 填空题练习结果</h2>
+                  </div>
+                  <div style="margin:20px 0; padding:15px; background:#f7f9fc; border-radius:8px;">
+                      <p style="font-size:18px; margin:8px 0;">总题数：<strong id="fill-total-count">0</strong> 题</p>
+                      <p style="font-size:18px; margin:8px 0;">正确数：<strong id="fill-correct-count" class="correct">0</strong> 题</p>
+                      <p style="font-size:18px; margin:8px 0;">错误数：<strong id="fill-wrong-count" class="incorrect">0</strong> 题</p>
+                      <p style="font-size:18px; margin:8px 0;">准确率：<strong id="fill-accuracy" style="color:#3498db;">0%</strong></p>
+                  </div>
+                  <div class="filter-controls">
+                      <button class="filter-btn active" data-filter="all">全部题目</button>
+                      <button class="filter-btn" data-filter="correct">正确题目</button>
+                      <button class="filter-btn" data-filter="wrong">错误题目</button>
+                  </div>
+                  <button id="retry-wrong-fill-btn" class="btn btn-danger" style="margin-top:15px; display:none;">
+                      <i class="fas fa-redo"></i> 错题重练
+                  </button>
+              </div>
+
               <div id="fill-form">
                   <!-- 填空题由 JS 动态生成 -->
+              </div>
+
+              <!-- 底部操作按钮 -->
+              <div style="text-align:center; margin-top:40px; padding:30px 0; border-top:2px solid #e6eef5;">
+                  <div style="display:inline-flex; gap:15px; flex-wrap:wrap; justify-content:center; align-items:center;">
+                      <button id="check-all-btn" class="btn" style="min-width:160px; padding:14px 30px; font-size:16px; box-shadow:0 4px 12px rgba(52,152,219,0.3);">
+                          <i class="fas fa-search"></i> 检查全部
+                      </button>
+                      <button id="submit-fill-btn" class="btn" style="background:linear-gradient(135deg,#2ecc71,#27ae60); min-width:160px; padding:14px 30px; font-size:16px; box-shadow:0 4px 12px rgba(46,204,113,0.3);">
+                          <i class="fas fa-paper-plane"></i> 提交并统计
+                      </button>
+                  </div>
               </div>
           </div>
       </div>
@@ -12567,11 +12729,107 @@
         "options": ["A. 防止模型过拟合"],
         "answer": "A"
     }
+],
+                        speech: [
+    {
+        "id": 1,
+        "question": "音节是听觉能够受到的最自然的语音单位，汉语的音节主要由____和____两个音素组成。",
+        "options": ["A. 声母和韵母"],
+        "answer": "A"
+    },
+    {
+        "id": 2,
+        "question": "对原始语音时域信号进行预处理，主要包括____、____、____三个过程。",
+        "options": ["A. 预加重、分帧、加窗"],
+        "answer": "A"
+    },
+    {
+        "id": 3,
+        "question": "语音信号处理过程中，傅里叶变换的作用是____。",
+        "options": ["A. 将时域信号转换为频域信号"],
+        "answer": "A"
+    },
+    {
+        "id": 4,
+        "question": "语音识别中，常用的声学特征主要包括____、____、____、____四种。",
+        "options": ["A. 语谱图、MFCC、Fbank、PLP"],
+        "answer": "A"
+    },
+    {
+        "id": 5,
+        "question": "对一段时长为80ms的语音信号进行采样量化分帧，帧长为30ms，帧移10ms，其采样率为16kHz，量化位数4位，其语音信号分帧帧数为____，比特率为____。",
+        "options": ["A. 6或7, 64kb/s (kbps)"],
+        "answer": "A"
+    },
+    {
+        "id": 6,
+        "question": "假设天气预报的马尔科夫链状态转移矩阵如下表所示：根据马尔科夫链，已知今天天气为雨天，则未来两天出现\"晴天\"\"多云\"\"雨天\"的概率为____。",
+        "options": ["A. 0.2*0.3*0.2=0.012"],
+        "answer": "A"
+    },
+    {
+        "id": 7,
+        "question": "假设某语音输入特征服从GMM，其由两个高斯分布加权组成，第一个高斯分布均值和方差分别为μ1=[2,3], Σ1=[0.7,0.5], 权值为c1=0.3；第二个高斯分布均值和方差分别为μ2=[5,4], Σ2=[0.4,0.8], 权值为c2=0.7。那么语音输入特征[6,7]的概率可表示为____（不用化简）。",
+        "options": ["A. 0.3×N([6,7];μ1,Σ1) + 0.7×N([6,7];μ2,Σ2)"],
+        "answer": "A"
+    },
+    {
+        "id": 8,
+        "question": "在语言训练时，当语料数据不足时，语料中未出现或少量出现的词序列的条件概率采用____技术获得。",
+        "options": ["A. 平滑技术"],
+        "answer": "A"
+    },
+    {
+        "id": 9,
+        "question": "声音信号采样的采样率要求____。",
+        "options": ["A. 采样率大于信号中最高频率的两倍时"],
+        "answer": "A"
+    },
+    {
+        "id": 10,
+        "question": "基于深度学习的语音识别中，模型参数求解的方法为____，采用____作为损失函数。",
+        "options": ["A. 梯度下降法，交叉熵损失"],
+        "answer": "A"
+    }
+],
+                        image: [
+  {
+    "id": 1,
+    "question": "对原始语音时域信号进行预处理，主要包括____、____、____三个过程。",
+    "options": ["A. 预加重、分帧、加窗"],
+    "answer": "A"
+  },
+  {
+    "id": 2,
+    "question": "汉语的音节主要由____和____两个音素组成。",
+    "options": ["A. 声母和韵母"],
+    "answer": "A"
+  },
+  {
+    "id": 3,
+    "question": "语音信号处理过程中，傅里叶变换的作用是____。",
+    "options": ["A. 将时域信号转换为频域信号"],
+    "answer": "A"
+  },
+  {
+    "id": 4,
+    "question": "语音识别中，常用的声学特征主要包括____、____、____、____四种。",
+    "options": ["A. 语谱图、MFCC、Fbank、PLP"],
+    "answer": "A"
+  },
+  {
+    "id": 5,
+    "question": "当采样率为16 kHz、量化位数4位时，比特率为____kb/s。",
+    "options": ["A. 64"],
+    "answer": "A"
+  }
 ]
       };
 
           let currentFillQuestions = [];
           let currentFillConfig = { count: 0, order: 'sequential' };
+          let fillAnswers = {}; // 存储用户填空题答案
+          let fillResults = {}; // 存储填空题结果
 
           const fillSettings = document.getElementById('fill-settings');
           const fillSettingsCountInput = document.getElementById('fill-settings-count');
@@ -12595,13 +12853,25 @@
           function updateFillSummary() {
               if (!fillSummary) return;
               const orderText = currentFillConfig.order === 'random' ? '随机' : '顺序';
-              const bankText = selectedBank === 'ict' ? 'ICT题库' : 'NLP题库';
+              const bankNames = {
+                  'ict': 'ICT题库',
+                  'nlp': 'NLP题库',
+                  'speech': '语音识别题库',
+                  'image': '数字图像处理题库'
+              };
+              const bankText = bankNames[selectedBank] || 'ICT题库';
               fillSummary.textContent = `当前配置：${bankText} · 共 ${currentFillConfig.count} 题 · ${orderText}`;
           }
 
           function updateFillSettingsInfo() {
               const total = getCurrentFillBank().length;
-              const bankText = selectedBank === 'ict' ? 'ICT' : 'NLP';
+              const bankNames = {
+                  'ict': 'ICT',
+                  'nlp': 'NLP',
+                  'speech': '语音识别',
+                  'image': '数字图像处理'
+              };
+              const bankText = bankNames[selectedBank] || 'ICT';
               fillSettingsInfo.textContent = `${bankText}填空题库总数：${total}题`;
               fillSettingsCountInput.max = total;
               fillSettingsCountInput.placeholder = `请输入题目数量（1-${total}）`;
@@ -12627,6 +12897,10 @@
                   : bank.slice(0, boundedCount);
               currentFillQuestions = chosen;
               currentFillConfig = { count: boundedCount, order };
+              // 重置答案和结果
+              fillAnswers = {};
+              fillResults = {};
+              document.getElementById('fill-results').style.display = 'none';
               renderFillQuestions(currentFillQuestions);
               updateFillSummary();
               updateFillPracticeTitle();
@@ -12680,6 +12954,9 @@
               const feedback = document.getElementById(`fill-feedback-${id}`);
               const val = normalizeStr(input.value || '');
 
+              // 记录用户答案
+              fillAnswers[id] = input.value || '';
+
               // 计算正确答案文本
               const correctOption = q.options.find(opt => opt.trim().toUpperCase().startsWith(q.answer + '.')) || q.options[0];
               const correctText = normalizeStr(extractOptionText(correctOption));
@@ -12689,6 +12966,9 @@
               // 还接受写成带字母和点形式或仅写文本
               const isCorrect = accepted.has(val) || accepted.has(normalizeStr(val.replace(/^[A-Za-z]\.\s*/, '')));
 
+              // 记录结果
+              fillResults[id] = isCorrect;
+
               feedback.style.display = 'block';
               if (isCorrect) {
                   feedback.className = 'answer-feedback correct';
@@ -12697,11 +12977,108 @@
                   feedback.className = 'answer-feedback incorrect';
                   feedback.innerHTML = `<i class="fas fa-times-circle"></i> 不正确。正确答案：${extractOptionText(correctOption)}`;
               }
+              return isCorrect;
           }
+
+          // 提交并统计
+          document.getElementById('submit-fill-btn').addEventListener('click', function() {
+              // 先检查所有题目
+              getActiveFillQuestions().forEach(q => checkFillQuestion(q.id));
+              
+              // 计算统计数据
+              const questions = getActiveFillQuestions();
+              const total = questions.length;
+              let correct = 0;
+              let wrong = 0;
+              
+              questions.forEach(q => {
+                  if (fillResults[q.id] === true) {
+                      correct++;
+                  } else {
+                      wrong++;
+                  }
+              });
+              
+              const accuracy = total > 0 ? ((correct / total) * 100).toFixed(2) : 0;
+              
+              // 更新统计显示
+              document.getElementById('fill-total-count').textContent = total;
+              document.getElementById('fill-correct-count').textContent = correct;
+              document.getElementById('fill-wrong-count').textContent = wrong;
+              document.getElementById('fill-accuracy').textContent = accuracy + '%';
+              
+              // 显示结果区域
+              document.getElementById('fill-results').style.display = 'block';
+              
+              // 如果有错题，显示错题重练按钮
+              const retryBtn = document.getElementById('retry-wrong-fill-btn');
+              if (wrong > 0) {
+                  retryBtn.style.display = 'inline-block';
+              } else {
+                  retryBtn.style.display = 'none';
+              }
+              
+              // 滚动到结果区域
+              document.getElementById('fill-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
 
           // 检查全部
           document.getElementById('check-all-btn').addEventListener('click', function() {
               getActiveFillQuestions().forEach(q => checkFillQuestion(q.id));
+          });
+          
+          // 错题重练
+          document.getElementById('retry-wrong-fill-btn').addEventListener('click', function() {
+              // 筛选出错题
+              const wrongQuestions = getActiveFillQuestions().filter(q => fillResults[q.id] === false);
+              
+              if (wrongQuestions.length === 0) {
+                  alert('没有错题需要重练！');
+                  return;
+              }
+              
+              // 重置状态
+              fillAnswers = {};
+              fillResults = {};
+              document.getElementById('fill-results').style.display = 'none';
+              
+              // 设置为错题列表
+              currentFillQuestions = wrongQuestions;
+              currentFillConfig.count = wrongQuestions.length;
+              
+              // 重新渲染
+              renderFillQuestions(wrongQuestions);
+              updateFillSummary();
+              
+              // 滚动到顶部
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+          
+          // 填空题结果筛选
+          document.querySelectorAll('#fill-results .filter-btn').forEach(btn => {
+              btn.addEventListener('click', function() {
+                  // 更新按钮状态
+                  document.querySelectorAll('#fill-results .filter-btn').forEach(b => b.classList.remove('active'));
+                  this.classList.add('active');
+                  
+                  const filter = this.getAttribute('data-filter');
+                  const questions = document.querySelectorAll('#fill-form .question');
+                  
+                  questions.forEach(qDiv => {
+                      const qId = parseInt(qDiv.id.replace('fill-q-', ''));
+                      const result = fillResults[qId];
+                      
+                      if (filter === 'all') {
+                          qDiv.style.display = 'block';
+                      } else if (filter === 'correct' && result === true) {
+                          qDiv.style.display = 'block';
+                      } else if (filter === 'wrong' && result === false) {
+                          qDiv.style.display = 'block';
+                      } else {
+                          qDiv.style.display = 'none';
+                      }
+                  });
+              });
           });
 
           // 重置
@@ -12712,6 +13089,14 @@
                   if (input) input.value = '';
                   if (feedback) { feedback.style.display = 'none'; feedback.innerHTML = ''; }
               });
+              // 清除答案和结果记录
+              fillAnswers = {};
+              fillResults = {};
+              // 隐藏结果区域
+              document.getElementById('fill-results').style.display = 'none';
+              // 重置筛选按钮
+              document.querySelectorAll('#fill-results .filter-btn').forEach(b => b.classList.remove('active'));
+              document.querySelector('#fill-results .filter-btn[data-filter="all"]').classList.add('active');
               window.scrollTo({ top: 0, behavior: 'smooth' });
           });
 
@@ -12722,6 +13107,9 @@
               document.getElementById('mode-selection').classList.remove('hidden');
               document.getElementById('fill-form').innerHTML = '';
               currentFillQuestions = [];
+              fillAnswers = {};
+              fillResults = {};
+              document.getElementById('fill-results').style.display = 'none';
           });
 
           fillConfigBtn.addEventListener('click', function() {
