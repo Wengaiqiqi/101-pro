@@ -14241,8 +14241,24 @@
           function updateFillPracticeTitle() {
               const titleEl = document.getElementById('fill-practice-title');
               if (titleEl) {
-                  const bankText = selectedBank === 'ict' ? 'ICT' : '自然语言处理(NLP)';
-                  titleEl.textContent = `${bankText}填空题练习（逐题校验）`;
+                  let bankText = '';
+                  switch(selectedBank) {
+                      case 'ict':
+                          bankText = 'ICT昇腾AI';
+                          break;
+                      case 'nlp':
+                          bankText = '自然语言处理(NLP)';
+                          break;
+                      case 'speech':
+                          bankText = '语音识别(Speech)';
+                          break;
+                      case 'image':
+                          bankText = '图像处理(Image)';
+                          break;
+                      default:
+                          bankText = '自然语言处理(NLP)';
+                  }
+                  titleEl.textContent = `${bankText}填空题练习`;
               }
           }
 
