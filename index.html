@@ -14294,12 +14294,23 @@
                   div.innerHTML = `
                       <div class="question-title"><span class="question-number">${idx+1}. </span>${q.question}</div>
                       <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
-                          <input type="text" class="password-input" id="input-${q.id}" placeholder="在此输入你的答案（例如：隐含层 或 A）" style="flex:1">
+                          <input type="text" class="password-input" id="input-${q.id}" placeholder="在此输入你的答案（例如：隐含层 或 A）按回车校验" style="flex:1">
                           <button class="btn" data-qid="${q.id}" onclick="checkFillQuestion(${q.id})">校验</button>
                       </div>
                       <div class="answer-feedback" id="fill-feedback-${q.id}" style="margin-top:10px; display:none;"></div>
                   `;
                   form.appendChild(div);
+                  
+                  // 为输入框添加回车键监听
+                  const inputElement = document.getElementById(`input-${q.id}`);
+                  if (inputElement) {
+                      inputElement.addEventListener('keypress', function(e) {
+                          if (e.key === 'Enter' || e.keyCode === 13) {
+                              e.preventDefault();
+                              checkFillQuestion(q.id);
+                          }
+                      });
+                  }
               });
           }
 
