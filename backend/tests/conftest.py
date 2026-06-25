@@ -3,10 +3,10 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import create_app
 
 
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
-    with TestClient(app) as test_client:
+    with TestClient(create_app()) as test_client:
         yield test_client
