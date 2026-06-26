@@ -48,6 +48,28 @@ def test_question_bank_owner_can_update_and_delete(client: TestClient) -> None:
     assert get_response.status_code == 404
 
 
+def test_question_bank_update_rejects_null_name_and_preserves_existing_data(client: TestClient) -> None:
+    token = register_and_login(client, "alice", "alice@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_response = client.post(
+        "/api/question-banks",
+        headers=headers,
+        json={"name": "Original Bank", "description": "Draft"},
+    )
+    assert create_response.status_code == 201
+    bank_id = create_response.json()["id"]
+
+    update_response = client.put(f"/api/question-banks/{bank_id}", headers=headers, json={"name": None})
+    assert update_response.status_code == 422
+
+    get_response = client.get(f"/api/question-banks/{bank_id}", headers=headers)
+    assert get_response.status_code == 200
+    persisted = get_response.json()
+    assert persisted["name"] == "Original Bank"
+    assert persisted["description"] == "Draft"
+
+
 def test_non_owner_get_update_and_delete_question_bank_returns_404(client: TestClient) -> None:
     alice_token = register_and_login(client, "alice", "alice@example.com")
     bob_token = register_and_login(client, "bob", "bob@example.com")

@@ -44,6 +44,7 @@ class Question(Base):
     options: Mapped[list["QuestionOption"]] = relationship(
         back_populates="question",
         cascade="all, delete-orphan",
+        order_by="QuestionOption.sort_order",
         passive_deletes=True,
     )
 

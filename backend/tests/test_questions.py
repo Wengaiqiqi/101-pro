@@ -23,10 +23,10 @@ def _single_choice_payload(stem: str = "What is 2 + 2?") -> dict[str, object]:
         "tags": ["math", "arithmetic"],
         "source": "manual",
         "options": [
-            {"label": "A", "content": "3", "is_correct": False, "sort_order": 1},
             {"label": "B", "content": "4", "is_correct": True, "sort_order": 2},
-            {"label": "C", "content": "5", "is_correct": False, "sort_order": 3},
+            {"label": "A", "content": "3", "is_correct": False, "sort_order": 1},
             {"label": "D", "content": "6", "is_correct": False, "sort_order": 4},
+            {"label": "C", "content": "5", "is_correct": False, "sort_order": 3},
         ],
     }
 
@@ -47,12 +47,14 @@ def test_question_crud_for_owner(client: TestClient) -> None:
     assert created["bank_id"] == bank_id
     assert created["stem"] == "What is 2 + 2?"
     assert len(created["options"]) == 4
+    assert [option["label"] for option in created["options"]] == ["A", "B", "C", "D"]
 
     list_response = client.get(f"/api/question-banks/{bank_id}/questions", headers=headers)
     assert list_response.status_code == 200
     listed = list_response.json()
     assert len(listed) == 1
     assert listed[0]["id"] == question_id
+    assert [option["sort_order"] for option in listed[0]["options"]] == [1, 2, 3, 4]
     assert listed[0]["options"][1]["is_correct"] is True
 
     update_response = client.put(
@@ -72,6 +74,28 @@ def test_question_crud_for_owner(client: TestClient) -> None:
 
     delete_again_response = client.delete(f"/api/questions/{question_id}", headers=headers)
     assert delete_again_response.status_code == 404
+
+
+def test_question_update_rejects_null_tags_and_preserves_existing_data(client: TestClient) -> None:
+    token = register_and_login(client, "alice", "alice@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    bank_id = _create_bank(client, token)
+    create_response = client.post(
+        f"/api/question-banks/{bank_id}/questions",
+        headers=headers,
+        json=_single_choice_payload(),
+    )
+    assert create_response.status_code == 201
+    question_id = create_response.json()["id"]
+
+    update_response = client.put(f"/api/questions/{question_id}", headers=headers, json={"tags": None})
+    assert update_response.status_code == 422
+
+    list_response = client.get(f"/api/question-banks/{bank_id}/questions", headers=headers)
+    assert list_response.status_code == 200
+    persisted = list_response.json()[0]
+    assert persisted["id"] == question_id
+    assert persisted["tags"] == ["math", "arithmetic"]
 
 
 def test_non_owner_cannot_access_or_modify_questions(client: TestClient) -> None:
@@ -115,3 +139,50 @@ def test_duplicate_question_option_labels_return_400(client: TestClient) -> None
     response = client.post(f"/api/question-banks/{bank_id}/questions", headers=headers, json=payload)
 
     assert response.status_code == 400
+
+
+def test_duplicate_question_option_sort_orders_return_400(client: TestClient) -> None:
+    token = register_and_login(client, "alice", "alice@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    bank_id = _create_bank(client, token)
+    payload = _single_choice_payload()
+    payload["options"] = [
+        {"label": "A", "content": "3", "sort_order": 1},
+        {"label": "B", "content": "4", "is_correct": True, "sort_order": 1},
+    ]
+
+    response = client.post(f"/api/question-banks/{bank_id}/questions", headers=headers, json=payload)
+
+    assert response.status_code == 400
+
+
+def test_duplicate_option_update_preserves_existing_options(client: TestClient) -> None:
+    token = register_and_login(client, "alice", "alice@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    bank_id = _create_bank(client, token)
+    create_response = client.post(
+        f"/api/question-banks/{bank_id}/questions",
+        headers=headers,
+        json=_single_choice_payload(),
+    )
+    assert create_response.status_code == 201
+    question_id = create_response.json()["id"]
+
+    update_response = client.put(
+        f"/api/questions/{question_id}",
+        headers=headers,
+        json={
+            "options": [
+                {"label": "A", "content": "Still 3", "sort_order": 1},
+                {"label": "A", "content": "Still duplicate", "is_correct": True, "sort_order": 2},
+            ]
+        },
+    )
+    assert update_response.status_code == 400
+
+    list_response = client.get(f"/api/question-banks/{bank_id}/questions", headers=headers)
+    assert list_response.status_code == 200
+    persisted_options = list_response.json()[0]["options"]
+    assert [option["label"] for option in persisted_options] == ["A", "B", "C", "D"]
+    assert [option["content"] for option in persisted_options] == ["3", "4", "5", "6"]
+    assert [option["sort_order"] for option in persisted_options] == [1, 2, 3, 4]

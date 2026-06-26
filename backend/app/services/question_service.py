@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -5,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.question import Question, QuestionBank, QuestionOption
 from app.models.user import User
-from app.schemas.question import QuestionCreate, QuestionUpdate
+from app.schemas.question import QuestionCreate, QuestionOptionCreate, QuestionUpdate
 from app.schemas.question_bank import QuestionBankCreate, QuestionBankUpdate
 
 
@@ -18,6 +20,22 @@ def _duplicate_options() -> HTTPException:
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Question option labels and sort orders must be unique",
     )
+
+
+def _save_failed() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question could not be saved")
+
+
+def _validate_unique_options(options: Sequence[QuestionOptionCreate | dict[str, object]]) -> None:
+    labels: set[str] = set()
+    sort_orders: set[int] = set()
+    for option in options:
+        label = option.label if isinstance(option, QuestionOptionCreate) else option["label"]
+        sort_order = option.sort_order if isinstance(option, QuestionOptionCreate) else option["sort_order"]
+        if label in labels or sort_order in sort_orders:
+            raise _duplicate_options()
+        labels.add(label)
+        sort_orders.add(sort_order)
 
 
 def list_banks(db: Session, user: User) -> list[QuestionBank]:
@@ -67,6 +85,7 @@ def list_questions(db: Session, user: User, bank_id: int) -> list[Question]:
 
 def create_question(db: Session, user: User, bank_id: int, payload: QuestionCreate) -> Question:
     get_owned_bank(db, user, bank_id)
+    _validate_unique_options(payload.options)
     question = Question(
         bank_id=bank_id,
         type=payload.type,
@@ -83,7 +102,7 @@ def create_question(db: Session, user: User, bank_id: int, payload: QuestionCrea
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise _duplicate_options() from exc
+        raise _save_failed() from exc
     return _get_owned_question(db, user, question.id)
 
 
@@ -91,6 +110,9 @@ def update_question(db: Session, user: User, question_id: int, payload: Question
     question = _get_owned_question(db, user, question_id)
     data = payload.model_dump(exclude_unset=True)
     options = data.pop("options", None)
+    if options is not None:
+        _validate_unique_options(options)
+
     for field, value in data.items():
         setattr(question, field, value)
 
@@ -103,7 +125,7 @@ def update_question(db: Session, user: User, question_id: int, payload: Question
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise _duplicate_options() from exc
+        raise _save_failed() from exc
     return _get_owned_question(db, user, question_id)
 
 
