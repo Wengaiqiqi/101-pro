@@ -16,7 +16,7 @@ describe('AuthPage', () => {
 
     await user.click(screen.getByRole('button', { name: '创建账号' }));
 
-    expect(screen.getByRole('heading', { name: '创建账号' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '注册' })).toBeInTheDocument();
     expect(screen.getByLabelText('用户名')).toBeInTheDocument();
     expect(screen.getByLabelText('邮箱')).toBeInTheDocument();
     expect(screen.getByLabelText('密码')).toBeInTheDocument();

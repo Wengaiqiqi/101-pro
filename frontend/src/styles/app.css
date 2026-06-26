@@ -48,6 +48,23 @@ button:disabled {
   font-weight: 600;
 }
 
+.boot-error {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(100%, 360px);
+  padding: 22px;
+  border: 1px solid #f3bf9f;
+  border-radius: 8px;
+  color: #92400e;
+  background: #fff7ed;
+}
+
+.boot-error strong {
+  color: #7c2d12;
+  font-size: 16px;
+}
+
 .auth-panel {
   width: min(100%, 392px);
   padding: 24px;
@@ -199,6 +216,12 @@ button:disabled {
 .inline-alert {
   margin-bottom: 14px;
   padding: 10px 12px;
+}
+
+.inline-alert__action {
+  min-height: auto;
+  margin-left: 10px;
+  padding: 0;
 }
 
 .app-shell {

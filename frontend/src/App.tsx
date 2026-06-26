@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { getMe, getToken, listQuestionBanks } from './api/client';
+import { ApiError, getMe, getToken, listQuestionBanks } from './api/client';
 import type { QuestionBank, User } from './api/types';
 import { AppShell } from './components/AppShell';
 import type { AppPage } from './components/AppShell';
@@ -23,6 +23,7 @@ export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
   const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [isBooting, setIsBooting] = useState(true);
+  const [bootError, setBootError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,8 +41,12 @@ export function App() {
         if (isMounted) {
           setUser(currentUser);
         }
-      } catch {
-        clearAuthState();
+      } catch (caught) {
+        if (caught instanceof ApiError && caught.status === 401) {
+          clearAuthState();
+        } else if (isMounted) {
+          setBootError(caught instanceof Error ? caught.message : '启动失败，请稍后重试');
+        }
       } finally {
         if (isMounted) {
           setIsBooting(false);
@@ -72,6 +77,13 @@ export function App() {
         }
       } catch (caught) {
         if (isMounted) {
+          if (caught instanceof ApiError && caught.status === 401) {
+            clearAuthState();
+            setUser(null);
+            setBanks([]);
+            setActivePage('dashboard');
+            return;
+          }
           setLoadError(caught instanceof Error ? caught.message : '题库加载失败');
         }
       }
@@ -97,6 +109,20 @@ export function App() {
     return (
       <main className="boot-screen">
         <span>正在进入 101 Pro</span>
+      </main>
+    );
+  }
+
+  if (bootError) {
+    return (
+      <main className="boot-screen">
+        <div className="boot-error" role="alert">
+          <strong>启动失败</strong>
+          <span>{bootError}</span>
+          <button className="secondary-button" type="button" onClick={() => window.location.reload()}>
+            重试
+          </button>
+        </div>
       </main>
     );
   }

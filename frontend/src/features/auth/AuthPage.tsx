@@ -58,7 +58,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
           </span>
           <div>
             <p>101 Pro</p>
-            <h1 id="auth-title">{isRegistering ? '创建账号' : '登录'}</h1>
+            <h1 id="auth-title">{isRegistering ? '注册' : '登录'}</h1>
           </div>
         </div>
 
@@ -66,7 +66,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
           <Field
             label="用户名"
             name="username"
-            autoComplete={isRegistering ? 'username' : 'username'}
+            autoComplete="username"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             placeholder={isRegistering ? '输入用户名' : '用户名或邮箱'}

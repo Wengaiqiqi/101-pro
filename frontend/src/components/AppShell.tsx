@@ -1,7 +1,6 @@
 import {
   BookOpen,
   Bot,
-  ClipboardList,
   FileInput,
   LayoutDashboard,
   LogOut,
@@ -71,7 +70,7 @@ export function AppShell({ activePage, user, onNavigate, onLogout, children }: A
           })}
         </nav>
 
-        <button className="logout-button" type="button" onClick={onLogout}>
+        <button className="logout-button" type="button" aria-label="退出登录" onClick={onLogout}>
           <LogOut aria-hidden="true" size={16} />
           <span>退出登录</span>
         </button>
