@@ -76,6 +76,19 @@ def _process_job(client: TestClient, job_id: int) -> None:
         db.close()
 
 
+def _set_job_status(client: TestClient, job_id: int, status: str) -> None:
+    from app.models.import_job import ImportJob
+
+    session_local = client.app.state.testing_session_local
+    db = session_local()
+    try:
+        job = db.get(ImportJob, job_id)
+        job.status = status
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_import_job_upload_generates_draft_and_publishes_question(
     client: TestClient,
     monkeypatch,
@@ -272,6 +285,47 @@ def test_publish_requires_approved_draft(client: TestClient, monkeypatch) -> Non
 
     assert publish_response.status_code == 400
     assert publish_response.json()["detail"] == "No approved drafts to publish"
+
+
+def test_processing_is_idempotent_for_non_pending_jobs(client: TestClient, monkeypatch) -> None:
+    _mock_import_generation(monkeypatch)
+    token = register_and_login(client, "alice", "alice@example.com")
+    headers = _headers(token)
+    bank_id = _create_bank(client, token)
+    create_response = client.post(
+        "/api/import-jobs",
+        headers=headers,
+        data={"bank_id": str(bank_id), "question_count": "1"},
+        files={"file": ("fixture.txt", b"Process once.", "text/plain")},
+    )
+    job_id = create_response.json()["id"]
+
+    _process_job(client, job_id)
+    _process_job(client, job_id)
+
+    drafts_response = client.get(f"/api/import-jobs/{job_id}/drafts", headers=headers)
+    assert drafts_response.status_code == 200
+    assert len(drafts_response.json()) == 1
+
+
+def test_retry_rejects_processing_job(client: TestClient, monkeypatch) -> None:
+    _mock_import_generation(monkeypatch)
+    token = register_and_login(client, "alice", "alice@example.com")
+    headers = _headers(token)
+    bank_id = _create_bank(client, token)
+    create_response = client.post(
+        "/api/import-jobs",
+        headers=headers,
+        data={"bank_id": str(bank_id), "question_count": "1"},
+        files={"file": ("fixture.txt", b"Retry blocked.", "text/plain")},
+    )
+    job_id = create_response.json()["id"]
+    _set_job_status(client, job_id, "processing")
+
+    retry_response = client.post(f"/api/import-jobs/{job_id}/retry", headers=headers)
+
+    assert retry_response.status_code == 400
+    assert retry_response.json()["detail"] == "Import job is already processing"
 
 
 def test_invalid_draft_does_not_publish_question(client: TestClient, monkeypatch) -> None:

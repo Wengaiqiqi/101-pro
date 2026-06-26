@@ -63,6 +63,8 @@ def get_import_job(db: Session, user: User, import_job_id: int) -> ImportJob:
 
 def retry_import_job(db: Session, user: User, import_job_id: int) -> ImportJob:
     job = get_import_job(db, user, import_job_id)
+    if job.status == "processing":
+        raise _bad_request("Import job is already processing")
     db.execute(delete(ImportedQuestionDraft).where(ImportedQuestionDraft.import_job_id == job.id))
     db.execute(delete(ImportJobChunk).where(ImportJobChunk.import_job_id == job.id))
     job.status = "pending"
@@ -171,6 +173,8 @@ def process_import_job(db: Session, import_job_id: int) -> ImportJob:
     job = db.get(ImportJob, import_job_id)
     if job is None:
         raise _not_found()
+    if job.status != "pending":
+        return job
     user = db.get(User, job.user_id)
     if user is None:
         raise _not_found()
