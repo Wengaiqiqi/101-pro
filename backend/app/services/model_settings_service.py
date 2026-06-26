@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from cryptography.fernet import Fernet
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -60,15 +61,33 @@ def get_model_settings(db: Session, user: User) -> ModelSettingsResponse:
 def save_model_settings(db: Session, user: User, payload: ModelSettingsUpdate) -> ModelSettingsResponse:
     user_settings = db.scalar(select(UserModelSettings).where(UserModelSettings.user_id == user.id))
     if user_settings is None:
+        if payload.api_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="API key is required when creating model settings",
+            )
         user_settings = UserModelSettings(user_id=user.id)
         db.add(user_settings)
 
     user_settings.provider = payload.provider
     user_settings.base_url = payload.base_url
     user_settings.model = payload.model
-    user_settings.encrypted_api_key = encrypt_api_key(payload.api_key)
+    if payload.api_key is not None:
+        user_settings.encrypted_api_key = encrypt_api_key(payload.api_key)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        user_settings = db.scalar(select(UserModelSettings).where(UserModelSettings.user_id == user.id))
+        if user_settings is None:
+            raise
+        user_settings.provider = payload.provider
+        user_settings.base_url = payload.base_url
+        user_settings.model = payload.model
+        if payload.api_key is not None:
+            user_settings.encrypted_api_key = encrypt_api_key(payload.api_key)
+        db.commit()
     db.refresh(user_settings)
     return get_model_settings(db, user)
 
@@ -105,4 +124,28 @@ def test_model_connection(config: ResolvedModelConfig) -> dict[str, object]:
         model=config.model,
         api_key=config.api_key,
     )
+    try:
+        import httpx
+    except ModuleNotFoundError as exc:
+        if get_settings().is_development_like():
+            return {
+                "ok": False,
+                "provider": llm_config.provider,
+                "model": llm_config.model,
+                "message": "httpx is not installed; connection test was not executed",
+            }
+        raise RuntimeError("httpx is required to test model connections") from exc
+
+    url = f"{llm_config.base_url.rstrip('/')}/chat/completions"
+    response = httpx.post(
+        url,
+        headers={"Authorization": f"Bearer {llm_config.api_key}"},
+        json={
+            "model": llm_config.model,
+            "messages": [{"role": "user", "content": "Reply with ok."}],
+            "max_tokens": 4,
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
     return {"ok": True, "provider": llm_config.provider, "model": llm_config.model}

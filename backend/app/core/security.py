@@ -25,6 +25,15 @@ from app.core.config import get_settings
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto") if CryptContext else None
 
 
+def _allow_crypto_fallback() -> bool:
+    return get_settings().is_development_like()
+
+
+def _require_crypto_fallback_allowed(dependency: str) -> None:
+    if not _allow_crypto_fallback():
+        raise RuntimeError(f"{dependency} is required outside development/test environments")
+
+
 def _b64encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -42,6 +51,7 @@ def _sign(data: str, secret: str) -> str:
 def hash_password(password: str) -> str:
     if password_context is not None:
         return password_context.hash(password)
+    _require_crypto_fallback_allowed("passlib")
     salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("ascii"), 200_000)
     return f"pbkdf2_sha256${salt}${_b64encode(digest)}"
@@ -50,6 +60,7 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     if password_context is not None:
         return password_context.verify(password, password_hash)
+    _require_crypto_fallback_allowed("passlib")
     try:
         algorithm, salt, expected = password_hash.split("$", 2)
     except ValueError:
@@ -67,6 +78,7 @@ def create_access_token(subject: str) -> str:
     if jwt is not None:
         return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
+    _require_crypto_fallback_allowed("python-jose")
     header = {"alg": "HS256", "typ": "JWT"}
     signing_input = ".".join(
         [
@@ -82,6 +94,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
     if jwt is not None:
         return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
 
+    _require_crypto_fallback_allowed("python-jose")
     try:
         header, payload, signature = token.split(".", 2)
     except ValueError as exc:
@@ -91,6 +104,8 @@ def decode_access_token(token: str) -> dict[str, Any]:
         raise JWTError("Invalid signature")
     decoded = json.loads(_b64decode(payload))
     expires_at = decoded.get("exp")
-    if isinstance(expires_at, int) and expires_at < int(datetime.now(timezone.utc).timestamp()):
+    if not isinstance(expires_at, int):
+        raise JWTError("Token missing expiration")
+    if expires_at < int(datetime.now(timezone.utc).timestamp()):
         raise JWTError("Token expired")
     return decoded

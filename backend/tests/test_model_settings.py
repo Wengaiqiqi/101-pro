@@ -55,6 +55,22 @@ def test_model_settings_save_get_and_test_prioritizes_user_config(
     assert fetched["has_api_key"] is True
     assert "api_key" not in fetched
 
+    updated_response = client.put(
+        "/api/model-settings",
+        headers=headers,
+        json={
+            "provider": "openai-compatible",
+            "base_url": "https://user.example/v2",
+            "model": "user-model-v2",
+        },
+    )
+    assert updated_response.status_code == 200
+    updated = updated_response.json()
+    assert updated["base_url"] == "https://user.example/v2"
+    assert updated["model"] == "user-model-v2"
+    assert updated["has_api_key"] is True
+    assert "api_key" not in updated
+
     observed_config = {}
 
     def fake_test_model_connection(config: model_settings_service.ResolvedModelConfig) -> dict[str, object]:
@@ -68,10 +84,25 @@ def test_model_settings_save_get_and_test_prioritizes_user_config(
 
     test_response = client.post("/api/model-settings/test", headers=headers)
     assert test_response.status_code == 200
-    assert test_response.json() == {"ok": True, "provider": "openai-compatible", "model": "user-model"}
+    assert test_response.json() == {"ok": True, "provider": "openai-compatible", "model": "user-model-v2"}
     assert observed_config == {
         "provider": "openai-compatible",
-        "base_url": "https://user.example/v1",
-        "model": "user-model",
+        "base_url": "https://user.example/v2",
+        "model": "user-model-v2",
         "api_key": "user-secret-key",
     }
+
+
+def test_model_settings_requires_key_on_first_save(client: TestClient) -> None:
+    token = register_and_login(client, "alice", "alice@example.com")
+    response = client.put(
+        "/api/model-settings",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "provider": "openai-compatible",
+            "base_url": "https://user.example/v1",
+            "model": "user-model",
+        },
+    )
+
+    assert response.status_code == 400

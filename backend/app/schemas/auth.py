@@ -19,6 +19,14 @@ class LoginRequest(BaseModel):
     username_or_email: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=128)
 
+    @field_validator("username_or_email")
+    @classmethod
+    def normalize_username_or_email(cls, value: str) -> str:
+        normalized = value.strip()
+        if "@" in normalized:
+            return normalized.lower()
+        return normalized
+
 
 class TokenResponse(BaseModel):
     access_token: str

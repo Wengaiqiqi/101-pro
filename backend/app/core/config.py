@@ -20,6 +20,20 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
+    def is_development_like(self) -> bool:
+        return self.app_env.lower() in {"development", "dev", "test", "testing", "local"}
+
+    def validate_for_runtime(self) -> None:
+        if self.is_development_like():
+            return
+        if self.jwt_secret_key == "change-me-in-development" or len(self.jwt_secret_key) < 32:
+            raise RuntimeError("JWT_SECRET_KEY must be configured with a strong value outside development")
+        if (
+            self.api_key_encryption_secret == "change-me-32-byte-minimum-secret"
+            or len(self.api_key_encryption_secret) < 32
+        ):
+            raise RuntimeError("API_KEY_ENCRYPTION_SECRET must be configured with a strong value outside development")
+
 
 @lru_cache
 def get_settings() -> Settings:
