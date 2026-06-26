@@ -1,3 +1,3 @@
-from app.api.routes import health
+from app.api.routes import auth, health, model_settings
 
-routers = [health.router]
+routers = [health.router, auth.router, model_settings.router]
