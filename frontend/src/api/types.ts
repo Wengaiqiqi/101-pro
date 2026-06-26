@@ -29,6 +29,7 @@ export interface QuestionBank {
   name: string;
   description: string;
   visibility: string;
+  question_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -36,4 +37,109 @@ export interface QuestionBank {
 export interface QuestionBankCreate {
   name: string;
   description?: string;
+}
+
+export interface QuestionOption {
+  id?: number;
+  label?: string;
+  content: string;
+  is_correct: boolean;
+  order_index?: number;
+  sort_order?: number;
+}
+
+export interface Question {
+  id: number;
+  bank_id: number;
+  stem: string;
+  question_type: string;
+  type?: string;
+  answer_text?: string;
+  difficulty: string;
+  explanation?: string;
+  tags?: string[];
+  source?: string;
+  options: QuestionOption[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionPayload {
+  stem: string;
+  question_type: string;
+  answer_text?: string;
+  difficulty: string;
+  explanation?: string;
+  tags?: string[];
+  source?: string;
+  options: QuestionOption[];
+}
+
+export type ImportJobStatus = 'pending' | 'parsing' | 'generating' | 'completed' | 'failed' | 'published';
+
+export interface ImportJob {
+  id: number;
+  bank_id: number;
+  filename: string;
+  status: ImportJobStatus | string;
+  question_count: number;
+  question_types: string[];
+  difficulty: string;
+  language: string;
+  with_explanations: boolean;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportJobCreate {
+  bank_id: number;
+  file: File;
+  question_count: number;
+  question_types: string[];
+  difficulty: string;
+  language: string;
+  with_explanations: boolean;
+}
+
+export interface ImportedQuestionDraft {
+  id: number;
+  import_job_id: number;
+  stem: string;
+  question_type: string;
+  difficulty: string;
+  explanation?: string;
+  options: QuestionOption[];
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportedQuestionDraftPayload {
+  stem: string;
+  question_type: string;
+  difficulty: string;
+  explanation?: string;
+  options: QuestionOption[];
+  status?: string;
+}
+
+export interface ModelSettings {
+  provider: string;
+  model: string;
+  api_key_masked?: string;
+  temperature?: number;
+  max_tokens?: number;
+  updated_at?: string;
+}
+
+export interface PracticeSession {
+  id: number;
+  bank_id: number;
+  status: string;
+  total_questions: number;
+  correct_count: number;
+  wrong_count: number;
+  created_at: string;
+  updated_at: string;
 }

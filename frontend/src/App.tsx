@@ -1,13 +1,32 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
-import { ApiError, getMe, getToken, listQuestionBanks } from './api/client';
-import type { QuestionBank, User } from './api/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ApiError,
+  createImportJob,
+  createQuestion,
+  createQuestionBank,
+  deleteQuestion,
+  getMe,
+  getToken,
+  listImportJobs,
+  listQuestionBanks,
+  listQuestions,
+  updateQuestion
+} from './api/client';
+import type { ImportJob, ImportJobCreate, Question, QuestionBank, QuestionPayload, User } from './api/types';
 import { AppShell } from './components/AppShell';
 import type { AppPage } from './components/AppShell';
 import { EmptyState } from './components/EmptyState';
-import { StatusBadge } from './components/StatusBadge';
 import { AuthPage } from './features/auth/AuthPage';
 import { clearAuthState } from './features/auth/authStore';
+import { DashboardPage } from './features/dashboard/DashboardPage';
+import { DraftReviewPage } from './features/imports/DraftReviewPage';
+import { ImportJobDetailPage } from './features/imports/ImportJobDetailPage';
+import { ImportJobsPage } from './features/imports/ImportJobsPage';
+import { NewImportPage } from './features/imports/NewImportPage';
+import { BankDetailPage } from './features/questionBanks/BankDetailPage';
+import { QuestionBankListPage } from './features/questionBanks/QuestionBankListPage';
+
+type ImportView = 'list' | 'new' | 'detail' | 'drafts';
 
 const pageDescriptions: Record<AppPage, string> = {
   dashboard: '集中查看题库、导入和练习进度。',
@@ -22,9 +41,19 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
   const [banks, setBanks] = useState<QuestionBank[]>([]);
+  const [importJobs, setImportJobs] = useState<ImportJob[]>([]);
+  const [selectedBankId, setSelectedBankId] = useState<number | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [importView, setImportView] = useState<ImportView>('list');
+  const [selectedJob, setSelectedJob] = useState<ImportJob | null>(null);
   const [isBooting, setIsBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const selectedBank = useMemo(
+    () => banks.find((bank) => bank.id === selectedBankId) ?? null,
+    [banks, selectedBankId]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -61,49 +90,150 @@ export function App() {
     };
   }, []);
 
+  const refreshBanks = useCallback(async () => {
+    const items = await listQuestionBanks();
+    setBanks(items);
+  }, []);
+
+  const refreshImportJobs = useCallback(async () => {
+    const items = await listImportJobs();
+    setImportJobs(items);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
-    async function loadBanks() {
+    async function loadWorkspace() {
       if (!user) {
         return;
       }
 
       try {
-        const items = await listQuestionBanks();
+        const [bankItems, jobItems] = await Promise.all([listQuestionBanks(), listImportJobs()]);
         if (isMounted) {
-          setBanks(items);
+          setBanks(bankItems);
+          setImportJobs(jobItems);
           setLoadError(null);
         }
       } catch (caught) {
-        if (isMounted) {
-          if (caught instanceof ApiError && caught.status === 401) {
-            clearAuthState();
-            setUser(null);
-            setBanks([]);
-            setActivePage('dashboard');
-            return;
-          }
-          setLoadError(caught instanceof Error ? caught.message : '题库加载失败');
+        if (!isMounted) {
+          return;
         }
+        if (caught instanceof ApiError && caught.status === 401) {
+          clearAuthState();
+          setUser(null);
+          resetWorkspace();
+          return;
+        }
+        setLoadError(caught instanceof Error ? caught.message : '工作台数据加载失败');
       }
     }
 
-    void loadBanks();
+    void loadWorkspace();
 
     return () => {
       isMounted = false;
     };
   }, [user]);
 
-  const dashboardStats = useMemo(
-    () => [
-      { label: '题库', value: banks.length.toString(), tone: 'success' as const },
-      { label: '导入任务', value: '0', tone: 'neutral' as const },
-      { label: '待复习', value: '0', tone: 'warning' as const }
-    ],
-    [banks.length]
-  );
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadQuestions() {
+      if (!selectedBankId) {
+        setQuestions([]);
+        return;
+      }
+
+      try {
+        const items = await listQuestions(selectedBankId);
+        if (isMounted) {
+          setQuestions(items);
+          setLoadError(null);
+        }
+      } catch (caught) {
+        if (isMounted) {
+          setLoadError(caught instanceof Error ? caught.message : '题目加载失败');
+        }
+      }
+    }
+
+    void loadQuestions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedBankId]);
+
+  function resetWorkspace() {
+    setBanks([]);
+    setImportJobs([]);
+    setSelectedBankId(null);
+    setQuestions([]);
+    setImportView('list');
+    setSelectedJob(null);
+    setActivePage('dashboard');
+  }
+
+  function handleLogout() {
+    clearAuthState();
+    setUser(null);
+    resetWorkspace();
+  }
+
+  function handleNavigate(page: AppPage) {
+    setActivePage(page);
+    if (page === 'banks') {
+      setSelectedBankId(null);
+    }
+    if (page === 'imports') {
+      setImportView('list');
+      setSelectedJob(null);
+    }
+  }
+
+  async function handleCreateBank(payload: { name: string; description?: string }) {
+    const created = await createQuestionBank(payload);
+    setBanks((current) => [...current, created]);
+  }
+
+  async function handleCreateQuestion(payload: QuestionPayload) {
+    if (!selectedBankId) {
+      return;
+    }
+    const created = await createQuestion(selectedBankId, payload);
+    setQuestions((current) => [...current, created]);
+    await refreshBanks();
+  }
+
+  async function handleUpdateQuestion(questionId: number, payload: QuestionPayload) {
+    const updated = await updateQuestion(questionId, payload);
+    setQuestions((current) => current.map((question) => (question.id === questionId ? updated : question)));
+  }
+
+  async function handleDeleteQuestion(questionId: number) {
+    await deleteQuestion(questionId);
+    setQuestions((current) => current.filter((question) => question.id !== questionId));
+    await refreshBanks();
+  }
+
+  async function handleCreateImport(payload: ImportJobCreate) {
+    const created = await createImportJob(payload);
+    setImportJobs((current) => [created, ...current]);
+    setSelectedJob(created);
+    setImportView('detail');
+  }
+
+  const handleJobChange = useCallback((job: ImportJob) => {
+    setSelectedJob(job);
+    setImportJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
+  }, []);
+
+  async function handlePublished() {
+    await refreshImportJobs();
+    await refreshBanks();
+    setImportView('detail');
+  }
 
   if (isBooting) {
     return (
@@ -131,85 +261,77 @@ export function App() {
     return <AuthPage onAuthenticated={setUser} />;
   }
 
-  function handleLogout() {
-    clearAuthState();
-    setUser(null);
-    setBanks([]);
-    setActivePage('dashboard');
-  }
-
   return (
-    <AppShell activePage={activePage} user={user} onNavigate={setActivePage} onLogout={handleLogout}>
+    <AppShell activePage={activePage} user={user} onNavigate={handleNavigate} onLogout={handleLogout}>
       {loadError ? (
         <div className="inline-alert" role="alert">
           {loadError}
+          <button className="text-button inline-alert__action" type="button" onClick={() => setLoadError(null)}>
+            关闭
+          </button>
         </div>
       ) : null}
 
       {activePage === 'dashboard' ? (
-        <section className="panel">
-          <div className="panel__header">
-            <div>
-              <h2>工作台概览</h2>
-              <p>{pageDescriptions.dashboard}</p>
-            </div>
-          </div>
-
-          <div className="metric-grid">
-            {dashboardStats.map((item) => (
-              <div className="metric" key={item.label}>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-                <StatusBadge tone={item.tone}>正常</StatusBadge>
-              </div>
-            ))}
-          </div>
-        </section>
+        <DashboardPage
+          banks={banks}
+          importJobs={importJobs}
+          wrongQuestionCount={0}
+          onNavigateBanks={() => handleNavigate('banks')}
+          onNavigateImports={() => handleNavigate('imports')}
+          onNavigatePractice={() => handleNavigate('practice')}
+          onNavigateMistakes={() => handleNavigate('mistakes')}
+        />
       ) : null}
 
-      {activePage === 'banks' ? (
-        <section className="panel">
-          <div className="panel__header">
-            <div>
-              <h2>题库</h2>
-              <p>{pageDescriptions.banks}</p>
-            </div>
-            <button className="secondary-button" type="button">
-              <Plus size={15} aria-hidden="true" />
-              新建题库
-            </button>
-          </div>
-
-          {banks.length ? (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>名称</th>
-                  <th>描述</th>
-                  <th>可见性</th>
-                  <th>更新时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {banks.map((bank) => (
-                  <tr key={bank.id}>
-                    <td>{bank.name}</td>
-                    <td>{bank.description || '未填写'}</td>
-                    <td>
-                      <StatusBadge>{bank.visibility}</StatusBadge>
-                    </td>
-                    <td>{formatDate(bank.updated_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <EmptyState title="暂无题库" description="创建第一个题库后即可导入文档并生成练习题。" />
-          )}
-        </section>
+      {activePage === 'banks' && !selectedBank ? (
+        <QuestionBankListPage banks={banks} onCreate={handleCreateBank} onSelect={(bank) => setSelectedBankId(bank.id)} />
       ) : null}
 
-      {activePage !== 'dashboard' && activePage !== 'banks' ? (
+      {activePage === 'banks' && selectedBank ? (
+        <BankDetailPage
+          bank={selectedBank}
+          questions={questions}
+          onBack={() => setSelectedBankId(null)}
+          onCreateQuestion={handleCreateQuestion}
+          onUpdateQuestion={handleUpdateQuestion}
+          onDeleteQuestion={handleDeleteQuestion}
+        />
+      ) : null}
+
+      {activePage === 'imports' && importView === 'list' ? (
+        <ImportJobsPage
+          jobs={importJobs}
+          banks={banks}
+          onNew={() => setImportView('new')}
+          onSelect={(job) => {
+            setSelectedJob(job);
+            setImportView('detail');
+          }}
+        />
+      ) : null}
+
+      {activePage === 'imports' && importView === 'new' ? (
+        <NewImportPage banks={banks} onCreate={handleCreateImport} onCancel={() => setImportView('list')} />
+      ) : null}
+
+      {activePage === 'imports' && importView === 'detail' && selectedJob ? (
+        <ImportJobDetailPage
+          job={selectedJob}
+          onBack={() => setImportView('list')}
+          onReview={(job) => {
+            setSelectedJob(job);
+            setImportView('drafts');
+          }}
+          onJobChange={handleJobChange}
+        />
+      ) : null}
+
+      {activePage === 'imports' && importView === 'drafts' && selectedJob ? (
+        <DraftReviewPage job={selectedJob} onBack={() => setImportView('detail')} onPublished={handlePublished} />
+      ) : null}
+
+      {activePage !== 'dashboard' && activePage !== 'banks' && activePage !== 'imports' ? (
         <section className="panel">
           <EmptyState title={routeTitle(activePage)} description={pageDescriptions[activePage]} />
         </section>
@@ -229,13 +351,4 @@ function routeTitle(page: AppPage): string {
   };
 
   return titles[page];
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(value));
 }
