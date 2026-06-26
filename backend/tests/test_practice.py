@@ -58,9 +58,12 @@ def _create_question(
 
 def test_normalize_answer_and_scoring() -> None:
     assert normalize_answer("  B ") == ["b"]
+    assert normalize_answer([" B ", "a", " "]) == ["a", "b"]
+    assert normalize_answer("A|B") == ["a|b"]
     assert is_answer_correct(_Question("single_choice", "B"), " b ") is True
     assert is_answer_correct(_Question("single_choice", "B"), "A") is False
 
+    assert is_answer_correct(_Question("multiple_choice", "A|C"), ["c", " a "]) is True
     assert is_answer_correct(_Question("multiple_choice", "A C"), ["c", " a "]) is True
     assert is_answer_correct(_Question("multiple_choice", "A,C"), "C|A") is True
     assert is_answer_correct(_Question("multiple_choice", "A|C"), "A") is False
@@ -83,9 +86,10 @@ def test_practice_session_api_flow_and_owner_scope(client: TestClient) -> None:
         alice_token,
         bank_id,
         type_="multiple_choice",
-        answer_text="A C",
+        answer_text="A|C",
         stem="Multiple choice",
     )
+    extra_question_id = _create_question(client, alice_token, bank_id, answer_text="C", stem="Extra question")
 
     create_response = client.post(
         "/api/practice-sessions",
@@ -139,9 +143,17 @@ def test_practice_session_api_flow_and_owner_scope(client: TestClient) -> None:
     wrong_questions = wrong_questions_response.json()
     assert len(wrong_questions) == 1
     assert wrong_questions[0]["question_id"] == wrong_question_id
-    assert wrong_questions[0]["wrong_count"] == 2
+    assert wrong_questions[0]["wrong_count"] == 1
     assert wrong_questions[0]["mastery_status"] == "unmastered"
     wrong_question_row_id = wrong_questions[0]["id"]
+
+    over_limit_response = client.post(
+        f"/api/practice-sessions/{session_id}/answers",
+        headers=alice_headers,
+        json={"question_id": extra_question_id, "user_answer": "C", "elapsed_seconds": 3},
+    )
+    assert over_limit_response.status_code == 400
+    assert over_limit_response.json()["detail"] == "Practice session question limit reached"
 
     finish_response = client.post(f"/api/practice-sessions/{session_id}/finish", headers=alice_headers)
     assert finish_response.status_code == 200
@@ -150,6 +162,14 @@ def test_practice_session_api_flow_and_owner_scope(client: TestClient) -> None:
     assert finished["score"] == 1
     assert finished["accuracy"] == 50
     assert len(finished["answers"]) == 2
+
+    answer_after_finish_response = client.post(
+        f"/api/practice-sessions/{session_id}/answers",
+        headers=alice_headers,
+        json={"question_id": wrong_question_id, "user_answer": "B", "elapsed_seconds": 5},
+    )
+    assert answer_after_finish_response.status_code == 400
+    assert answer_after_finish_response.json()["detail"] == "Practice session is already finished"
 
     mastered_response = client.post(f"/api/wrong-questions/{wrong_question_row_id}/mastered", headers=alice_headers)
     assert mastered_response.status_code == 200

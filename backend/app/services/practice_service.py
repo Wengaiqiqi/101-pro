@@ -1,9 +1,9 @@
-from collections.abc import Iterable
 from datetime import UTC, datetime
+import re
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -21,55 +21,38 @@ def _bad_request(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
-def _normalize_text(value: object) -> str:
-    return " ".join(str(value).strip().lower().split())
-
-
-def _flatten_answer(value: object) -> Iterable[object]:
-    if isinstance(value, dict):
-        for key in sorted(value):
-            yield from _flatten_answer(value[key])
-    elif isinstance(value, (list, tuple, set)):
-        for item in value:
-            yield from _flatten_answer(item)
-    else:
-        yield value
-
-
 def normalize_answer(value: object) -> list[str]:
-    normalized: list[str] = []
-    for item in _flatten_answer(value):
-        if item is None:
-            continue
-        for part in str(item).replace("|", ",").split(","):
-            text = _normalize_text(part)
-            if text:
-                normalized.append(text)
-    return normalized
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return sorted(str(item).strip().lower() for item in value if str(item).strip())
+    return [str(value).strip().lower()]
 
 
-def _choice_labels(value: object) -> list[str]:
-    labels: list[str] = []
-    for item in _flatten_answer(value):
-        if item is None:
-            continue
-        text = str(item).replace("|", " ").replace(",", " ")
-        labels.extend(label for label in (_normalize_text(part) for part in text.split()) if label)
-    return labels
+def _choice_answer_labels(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        parts = value
+    else:
+        parts = re.split(r"[\s,|]+", str(value))
+    return sorted(str(part).strip().lower() for part in parts if str(part).strip())
+
+
+def _normalized_text(value: object) -> str:
+    return " ".join(str(value).strip().lower().split())
 
 
 def is_answer_correct(question: Question, user_answer: object) -> bool:
     question_type = question.type.lower()
     if question_type == "multiple_choice":
-        return set(_choice_labels(question.answer_text)) == set(_choice_labels(user_answer))
+        return _choice_answer_labels(question.answer_text) == _choice_answer_labels(user_answer)
 
-    if question_type in {"fill_blank", "short_answer"}:
-        actual = _normalize_text(user_answer)
-        accepted_answers = [_normalize_text(answer) for answer in question.answer_text.split("|")]
-        return actual in accepted_answers
-
-    expected = normalize_answer(question.answer_text)
+    expected = normalize_answer(question.answer_text.split("|"))
     actual = normalize_answer(user_answer)
+    if question_type in {"fill_blank", "short_answer"}:
+        accepted_answers = {_normalized_text(answer) for answer in question.answer_text.split("|")}
+        return _normalized_text(user_answer) in accepted_answers
     return expected == actual
 
 
@@ -91,11 +74,17 @@ def create_practice_session(db: Session, user: User, payload: PracticeSessionCre
 
 
 def get_practice_session(db: Session, user: User, session_id: int) -> PracticeSession:
+    return _get_practice_session(db, user, session_id)
+
+
+def _get_practice_session(db: Session, user: User, session_id: int, *, for_update: bool = False) -> PracticeSession:
     statement = (
         select(PracticeSession)
         .options(selectinload(PracticeSession.answers))
         .where(PracticeSession.id == session_id, PracticeSession.user_id == user.id)
     )
+    if for_update:
+        statement = statement.with_for_update()
     session = db.scalar(statement)
     if session is None:
         raise _not_found()
@@ -104,28 +93,39 @@ def get_practice_session(db: Session, user: User, session_id: int) -> PracticeSe
 
 
 def submit_answer(db: Session, user: User, session_id: int, payload: PracticeAnswerCreate) -> tuple[PracticeAnswer, bool]:
-    session = get_practice_session(db, user, session_id)
+    session = _get_practice_session(db, user, session_id, for_update=True)
+    if session.finished_at is not None:
+        raise _bad_request("Practice session is already finished")
+
     question = db.scalar(select(Question).where(Question.id == payload.question_id, Question.bank_id == session.bank_id))
     if question is None:
         raise _bad_request("Question does not belong to this practice session")
 
     is_correct = is_answer_correct(question, payload.user_answer)
-    answer = db.scalar(
-        select(PracticeAnswer).where(
-            PracticeAnswer.session_id == session_id,
-            PracticeAnswer.question_id == payload.question_id,
-        )
-    )
+    answer = _get_practice_answer(db, session_id, payload.question_id, for_update=True)
     created = answer is None
-    if answer is None:
+    was_correct = answer.is_correct if answer is not None else None
+    if created and _session_answer_count(db, session_id) >= session.question_count:
+        raise _bad_request("Practice session question limit reached")
+
+    if created:
         answer = PracticeAnswer(session_id=session_id, question_id=payload.question_id, user_answer_json={})
-        db.add(answer)
+        _apply_answer(answer, payload, is_correct)
+        try:
+            with db.begin_nested():
+                db.add(answer)
+                db.flush()
+        except IntegrityError:
+            answer = _get_practice_answer(db, session_id, payload.question_id, for_update=True)
+            if answer is None:
+                raise _bad_request("Practice answer could not be saved")
+            created = False
+            was_correct = answer.is_correct
+            _apply_answer(answer, payload, is_correct)
+    else:
+        _apply_answer(answer, payload, is_correct)
 
-    answer.user_answer_json = {"value": payload.user_answer}
-    answer.elapsed_seconds = payload.elapsed_seconds
-    answer.is_correct = is_correct
-
-    if not is_correct:
+    if not is_correct and (created or was_correct is True):
         _record_wrong_answer(db, user, payload.question_id)
 
     try:
@@ -139,7 +139,7 @@ def submit_answer(db: Session, user: User, session_id: int, payload: PracticeAns
 
 
 def finish_practice_session(db: Session, user: User, session_id: int) -> PracticeSession:
-    session = get_practice_session(db, user, session_id)
+    session = _get_practice_session(db, user, session_id, for_update=True)
     answered_count = len(session.answers)
     score = sum(1 for answer in session.answers if answer.is_correct)
     session.score = score
@@ -177,23 +177,60 @@ def _get_owned_bank(db: Session, user: User, bank_id: int) -> QuestionBank:
     return bank
 
 
+def _get_practice_answer(db: Session, session_id: int, question_id: int, *, for_update: bool = False) -> PracticeAnswer | None:
+    statement = select(PracticeAnswer).where(
+        PracticeAnswer.session_id == session_id,
+        PracticeAnswer.question_id == question_id,
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    return db.scalar(statement)
+
+
+def _session_answer_count(db: Session, session_id: int) -> int:
+    return db.scalar(select(func.count()).select_from(PracticeAnswer).where(PracticeAnswer.session_id == session_id)) or 0
+
+
+def _apply_answer(answer: PracticeAnswer, payload: PracticeAnswerCreate, is_correct: bool) -> None:
+    answer.user_answer_json = {"value": payload.user_answer}
+    answer.elapsed_seconds = payload.elapsed_seconds
+    answer.is_correct = is_correct
+
+
 def _record_wrong_answer(db: Session, user: User, question_id: int) -> None:
     now = datetime.now(UTC)
-    wrong_question = db.scalar(
-        select(WrongQuestion).where(WrongQuestion.user_id == user.id, WrongQuestion.question_id == question_id)
-    )
-    if wrong_question is None:
-        db.add(
-            WrongQuestion(
-                user_id=user.id,
-                question_id=question_id,
-                wrong_count=1,
-                last_wrong_at=now,
-                mastery_status="unmastered",
-            )
+    result = db.execute(
+        update(WrongQuestion)
+        .where(WrongQuestion.user_id == user.id, WrongQuestion.question_id == question_id)
+        .values(
+            wrong_count=WrongQuestion.wrong_count + 1,
+            last_wrong_at=now,
+            mastery_status="unmastered",
+            updated_at=now,
         )
+    )
+    if result.rowcount:
         return
 
-    wrong_question.wrong_count += 1
-    wrong_question.last_wrong_at = now
-    wrong_question.mastery_status = "unmastered"
+    try:
+        with db.begin_nested():
+            db.add(
+                WrongQuestion(
+                    user_id=user.id,
+                    question_id=question_id,
+                    wrong_count=1,
+                    last_wrong_at=now,
+                    mastery_status="unmastered",
+                )
+            )
+    except IntegrityError:
+        db.execute(
+            update(WrongQuestion)
+            .where(WrongQuestion.user_id == user.id, WrongQuestion.question_id == question_id)
+            .values(
+                wrong_count=WrongQuestion.wrong_count + 1,
+                last_wrong_at=now,
+                mastery_status="unmastered",
+                updated_at=now,
+            )
+        )
