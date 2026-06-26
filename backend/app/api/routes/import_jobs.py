@@ -35,7 +35,8 @@ def create_import_job(
         "with_explanations": with_explanations,
     }
     job = import_service.create_import_job(db, current_user, bank_id, file, generation_config)
-    return import_service.process_import_job(db, job.id)
+    import_service.enqueue_import_job(job.id)
+    return job
 
 
 @router.get("/import-jobs", response_model=list[ImportJobResponse])

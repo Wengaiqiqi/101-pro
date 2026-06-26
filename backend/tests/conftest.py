@@ -32,6 +32,7 @@ def client() -> Generator[TestClient, None, None]:
             db.close()
 
     app = create_app()
+    app.state.testing_session_local = testing_session_local
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as test_client:
