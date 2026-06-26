@@ -20,3 +20,4 @@ class ModelConnectionTestResponse(BaseModel):
     ok: bool
     provider: str
     model: str
+    message: str | None = None

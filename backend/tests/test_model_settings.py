@@ -1,3 +1,6 @@
+import sys
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
@@ -106,3 +109,34 @@ def test_model_settings_requires_key_on_first_save(client: TestClient) -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_model_connection_returns_stable_failure(monkeypatch) -> None:
+    class FakeHTTPError(Exception):
+        pass
+
+    def fake_post(*args, **kwargs):
+        raise FakeHTTPError("timeout")
+
+    fake_httpx = SimpleNamespace(
+        HTTPError=FakeHTTPError,
+        HTTPStatusError=type("FakeHTTPStatusError", (FakeHTTPError,), {}),
+        post=fake_post,
+    )
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+
+    response = model_settings_service.test_model_connection(
+        model_settings_service.ResolvedModelConfig(
+            provider="openai-compatible",
+            base_url="https://provider.example/v1",
+            model="demo-model",
+            api_key="secret",
+        )
+    )
+
+    assert response == {
+        "ok": False,
+        "provider": "openai-compatible",
+        "model": "demo-model",
+        "message": "Could not connect to model provider",
+    }

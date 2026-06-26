@@ -137,15 +137,30 @@ def test_model_connection(config: ResolvedModelConfig) -> dict[str, object]:
         raise RuntimeError("httpx is required to test model connections") from exc
 
     url = f"{llm_config.base_url.rstrip('/')}/chat/completions"
-    response = httpx.post(
-        url,
-        headers={"Authorization": f"Bearer {llm_config.api_key}"},
-        json={
+    try:
+        response = httpx.post(
+            url,
+            headers={"Authorization": f"Bearer {llm_config.api_key}"},
+            json={
+                "model": llm_config.model,
+                "messages": [{"role": "user", "content": "Reply with ok."}],
+                "max_tokens": 4,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        return {
+            "ok": False,
+            "provider": llm_config.provider,
             "model": llm_config.model,
-            "messages": [{"role": "user", "content": "Reply with ok."}],
-            "max_tokens": 4,
-        },
-        timeout=15,
-    )
-    response.raise_for_status()
+            "message": f"Provider returned HTTP {exc.response.status_code}",
+        }
+    except httpx.HTTPError:
+        return {
+            "ok": False,
+            "provider": llm_config.provider,
+            "model": llm_config.model,
+            "message": "Could not connect to model provider",
+        }
     return {"ok": True, "provider": llm_config.provider, "model": llm_config.model}
