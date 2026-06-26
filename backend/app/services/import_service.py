@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.import_job import ImportJob, ImportJobChunk, ImportedQuestionDraft
@@ -170,19 +170,24 @@ def _question_from_draft(job: ImportJob, draft: ImportedQuestionDraft) -> Questi
 
 
 def process_import_job(db: Session, import_job_id: int) -> ImportJob:
+    claim = db.execute(
+        update(ImportJob)
+        .where(ImportJob.id == import_job_id, ImportJob.status == "pending")
+        .values(status="processing", progress=10, error_message=None)
+    )
+    db.commit()
+    if claim.rowcount != 1:
+        job = db.get(ImportJob, import_job_id)
+        if job is None:
+            raise _not_found()
+        return job
+
     job = db.get(ImportJob, import_job_id)
     if job is None:
         raise _not_found()
-    if job.status != "pending":
-        return job
     user = db.get(User, job.user_id)
     if user is None:
         raise _not_found()
-
-    job.status = "processing"
-    job.progress = 10
-    job.error_message = None
-    db.commit()
 
     try:
         text = document_extractors.extract_text(job.stored_path, job.mime_type, job.original_filename)
