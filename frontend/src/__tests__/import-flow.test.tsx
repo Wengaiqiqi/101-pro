@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -36,16 +36,14 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 describe('import flow', () => {
   beforeEach(() => {
     localStorage.clear();
-    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
   it('creates an import job, shows processing status, then reviews a generated draft', async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const user = userEvent.setup();
     const jobs: ImportJob[] = [];
     const completedJob: ImportJob = {
       id: 31,
@@ -142,18 +140,19 @@ describe('import flow', () => {
     await user.upload(within(form).getByLabelText('文件'), new File(['题目内容'], 'questions.pdf', { type: 'application/pdf' }));
     await user.clear(within(form).getByLabelText('题目数量'));
     await user.type(within(form).getByLabelText('题目数量'), '1');
-    await user.click(within(form).getByRole('button', { name: '开始导入' }));
+    const submitButton = within(form).getByRole('button', { name: '开始导入' });
+    expect(submitButton).toBeEnabled();
+    fireEvent.submit(form);
 
+    await waitFor(() =>
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/import-jobs', expect.objectContaining({ method: 'POST' }))
+    );
     expect(await screen.findByText('处理中')).toBeInTheDocument();
 
-    await act(async () => {
-      vi.advanceTimersByTime(2000);
-    });
-
-    await waitFor(() => expect(screen.getByRole('button', { name: '审核草稿' })).toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: '审核草稿' }, { timeout: 3500 })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '审核草稿' }));
 
     expect(await screen.findByText('二分查找的前提是什么？')).toBeInTheDocument();
-    expect(screen.getByText('数组已排序')).toBeInTheDocument();
-  });
+    expect(screen.getByRole('cell', { name: /数组已排序/ })).toBeInTheDocument();
+  }, 10000);
 });

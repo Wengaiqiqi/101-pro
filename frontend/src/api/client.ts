@@ -270,7 +270,7 @@ function readErrorMessage(detail: unknown, fallback: string): string {
 
 function normalizeQuestion(raw: unknown): Question {
   const item = asRecord(raw);
-  const options = Array.isArray(item.options) ? item.options.map(normalizeOption) : [];
+  const options = Array.isArray(item.options) ? item.options.map((option) => normalizeOption(option)) : [];
   return {
     id: Number(item.id),
     bank_id: Number(item.bank_id),
