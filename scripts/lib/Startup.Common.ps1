@@ -206,6 +206,32 @@ function Test-TrackedProcess {
     }
 }
 
+function Stop-TrackedProcessTree {
+    param(
+        [Parameter(Mandatory = $true)][object]$Record,
+        [int]$GraceSeconds = 5
+    )
+
+    if (-not (Test-TrackedProcess -Record $Record)) {
+        return
+    }
+
+    $taskkill = Get-Command "taskkill.exe" -ErrorAction SilentlyContinue
+    if ($null -eq $taskkill) {
+        Stop-Process -Id ([int]$Record.pid) -Force -ErrorAction SilentlyContinue
+        return
+    }
+
+    & $taskkill.Source /PID ([int]$Record.pid) /T 2>$null | Out-Null
+    $deadline = (Get-Date).AddSeconds($GraceSeconds)
+    while ((Get-Date) -lt $deadline -and (Test-TrackedProcess -Record $Record)) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (Test-TrackedProcess -Record $Record) {
+        & $taskkill.Source /PID ([int]$Record.pid) /T /F 2>$null | Out-Null
+    }
+}
+
 function Test-PortAvailableForProject {
     param(
         [Parameter(Mandatory = $true)][int]$Port,
