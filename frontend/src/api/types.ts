@@ -75,7 +75,7 @@ export interface QuestionPayload {
   options: QuestionOption[];
 }
 
-export type ImportJobStatus = 'pending' | 'parsing' | 'generating' | 'completed' | 'failed' | 'published';
+export type ImportJobStatus = 'pending' | 'processing' | 'reviewing' | 'completed' | 'failed';
 
 export interface ImportJob {
   id: number;
@@ -107,6 +107,8 @@ export interface ImportedQuestionDraft {
   import_job_id: number;
   stem: string;
   question_type: string;
+  answer_json: Record<string, unknown>;
+  answer_text: string;
   difficulty: string;
   explanation?: string;
   options: QuestionOption[];
@@ -118,6 +120,8 @@ export interface ImportedQuestionDraft {
 export interface ImportedQuestionDraftPayload {
   stem: string;
   question_type: string;
+  answer_json?: Record<string, unknown>;
+  answer_text?: string;
   difficulty: string;
   explanation?: string;
   options: QuestionOption[];
@@ -142,4 +146,9 @@ export interface PracticeSession {
   wrong_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ImportPublishResponse {
+  published_count: number;
+  question_ids: number[];
 }

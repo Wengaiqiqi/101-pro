@@ -96,9 +96,7 @@ function Metric({ label, value, tone, actionLabel, onAction, icon, note = '正�
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     pending: '排队中',
-    parsing: '解析中',
     processing: '处理中',
-    generating: '生成中',
     reviewing: '待审核',
     completed: '已完成',
     failed: '失败',
@@ -115,7 +113,7 @@ function statusTone(status: string): 'neutral' | 'success' | 'warning' | 'danger
   if (status === 'failed') {
     return 'danger';
   }
-  if (status === 'pending' || status === 'parsing' || status === 'processing' || status === 'generating') {
+  if (status === 'pending' || status === 'processing') {
     return 'warning';
   }
   return 'neutral';

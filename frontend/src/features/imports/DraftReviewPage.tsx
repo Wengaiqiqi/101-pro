@@ -16,6 +16,7 @@ export function DraftReviewPage({ job, onBack, onPublished }: DraftReviewPagePro
   const [editingId, setEditingId] = useState<number | null>(null);
   const [stem, setStem] = useState('');
   const [explanation, setExplanation] = useState('');
+  const [answerText, setAnswerText] = useState('');
   const [options, setOptions] = useState<QuestionOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -49,6 +50,7 @@ export function DraftReviewPage({ job, onBack, onPublished }: DraftReviewPagePro
     setEditingId(draft.id);
     setStem(draft.stem);
     setExplanation(draft.explanation ?? '');
+    setAnswerText(draft.answer_text);
     setOptions(draft.options);
   }
 
@@ -70,6 +72,8 @@ export function DraftReviewPage({ job, onBack, onPublished }: DraftReviewPagePro
       const updated = await updateDraft(draft.id, {
         stem,
         question_type: draft.question_type,
+        answer_json: draft.answer_json,
+        answer_text: answerText,
         difficulty: draft.difficulty,
         explanation,
         options,
@@ -104,6 +108,8 @@ export function DraftReviewPage({ job, onBack, onPublished }: DraftReviewPagePro
       const updated = await updateDraft(draft.id, {
         stem: draft.stem,
         question_type: draft.question_type,
+        answer_json: draft.answer_json,
+        answer_text: draft.answer_text,
         difficulty: draft.difficulty,
         explanation: draft.explanation,
         options: draft.options,
@@ -139,14 +145,18 @@ export function DraftReviewPage({ job, onBack, onPublished }: DraftReviewPagePro
         <form className="panel__header" aria-label="编辑草稿" onSubmit={handleSave}>
           <Field label="题干" value={stem} onChange={(event) => setStem(event.target.value)} required />
           <Field label="解析" value={explanation} onChange={(event) => setExplanation(event.target.value)} />
-          {options.map((option, index) => (
-            <Field
-              key={index}
-              label={`选项 ${index + 1}`}
-              value={option.content}
-              onChange={(event) => updateOption(index, event.target.value)}
-            />
-          ))}
+          {isChoiceQuestion(drafts.find((item) => item.id === editingId)?.question_type ?? '') ? (
+            options.map((option, index) => (
+              <Field
+                key={index}
+                label={`选项 ${index + 1}`}
+                value={option.content}
+                onChange={(event) => updateOption(index, event.target.value)}
+              />
+            ))
+          ) : (
+            <Field label="答案" value={answerText} onChange={(event) => setAnswerText(event.target.value)} required />
+          )}
           <button className="primary-button" type="submit" disabled={isSaving}>
             保存草稿
           </button>
@@ -208,6 +218,10 @@ export function DraftReviewPage({ job, onBack, onPublished }: DraftReviewPagePro
       )}
     </section>
   );
+}
+
+function isChoiceQuestion(questionType: string): boolean {
+  return questionType === 'single_choice' || questionType === 'multiple_choice';
 }
 
 function statusLabel(status: string): string {

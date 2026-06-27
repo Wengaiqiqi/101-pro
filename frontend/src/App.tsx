@@ -5,11 +5,13 @@ import {
   createQuestion,
   createQuestionBank,
   deleteQuestion,
+  getImportJob,
   getMe,
   getToken,
   listImportJobs,
   listQuestionBanks,
   listQuestions,
+  setUnauthorizedHandler,
   updateQuestion
 } from './api/client';
 import type { ImportJob, ImportJobCreate, Question, QuestionBank, QuestionPayload, User } from './api/types';
@@ -175,6 +177,17 @@ export function App() {
     setActivePage('dashboard');
   }
 
+  const handleUnauthorized = useCallback(() => {
+    clearAuthState();
+    setUser(null);
+    resetWorkspace();
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(handleUnauthorized);
+    return () => setUnauthorizedHandler(null);
+  }, [handleUnauthorized]);
+
   function handleLogout() {
     clearAuthState();
     setUser(null);
@@ -232,6 +245,11 @@ export function App() {
   async function handlePublished() {
     await refreshImportJobs();
     await refreshBanks();
+    if (selectedJob) {
+      const nextJob = await getImportJob(selectedJob.id);
+      setSelectedJob(nextJob);
+      setImportJobs((current) => current.map((item) => (item.id === nextJob.id ? nextJob : item)));
+    }
     setImportView('detail');
   }
 
@@ -275,7 +293,7 @@ export function App() {
       {activePage === 'dashboard' ? (
         <DashboardPage
           banks={banks}
-          importJobs={importJobs}
+          importJobs={[...importJobs].sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())}
           wrongQuestionCount={0}
           onNavigateBanks={() => handleNavigate('banks')}
           onNavigateImports={() => handleNavigate('imports')}

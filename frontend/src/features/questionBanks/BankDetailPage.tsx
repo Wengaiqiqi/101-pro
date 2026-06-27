@@ -31,6 +31,7 @@ export function BankDetailPage({
   const [questionType, setQuestionType] = useState('single_choice');
   const [difficulty, setDifficulty] = useState('medium');
   const [explanation, setExplanation] = useState('');
+  const [answerText, setAnswerText] = useState('');
   const [options, setOptions] = useState<QuestionOption[]>(emptyOptions);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -43,6 +44,7 @@ export function BankDetailPage({
     setQuestionType(editing.question_type);
     setDifficulty(editing.difficulty);
     setExplanation(editing.explanation ?? '');
+    setAnswerText(editing.answer_text ?? '');
     setOptions(editing.options.length ? editing.options : emptyOptions);
   }, [editing]);
 
@@ -54,6 +56,7 @@ export function BankDetailPage({
     setQuestionType('single_choice');
     setDifficulty('medium');
     setExplanation('');
+    setAnswerText('');
     setOptions(emptyOptions);
   }
 
@@ -62,7 +65,12 @@ export function BankDetailPage({
   }
 
   function markCorrect(index: number) {
-    setOptions((current) => current.map((option, optionIndex) => ({ ...option, is_correct: optionIndex === index })));
+    setOptions((current) =>
+      current.map((option, optionIndex) => ({
+        ...option,
+        is_correct: questionType === 'multiple_choice' ? (optionIndex === index ? !option.is_correct : option.is_correct) : optionIndex === index
+      }))
+    );
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -73,9 +81,10 @@ export function BankDetailPage({
     const payload: QuestionPayload = {
       stem,
       question_type: questionType,
+      answer_text: isChoiceQuestion(questionType) ? undefined : answerText,
       difficulty,
       explanation,
-      options: options.filter((option) => option.content.trim())
+      options: isChoiceQuestion(questionType) ? options.filter((option) => option.content.trim()) : []
     };
 
     try {
@@ -123,15 +132,24 @@ export function BankDetailPage({
           </select>
         </label>
         <Field label="解析" value={explanation} onChange={(event) => setExplanation(event.target.value)} placeholder="可选" />
-        {options.map((option, index) => (
-          <label className="field" key={index}>
-            <span className="field__label">选项 {index + 1}</span>
-            <input className="field__control" value={option.content} onChange={(event) => updateOption(index, event.target.value)} />
-            <span>
-              <input type="radio" checked={option.is_correct} onChange={() => markCorrect(index)} /> 正确答案
-            </span>
-          </label>
-        ))}
+        {isChoiceQuestion(questionType) ? (
+          options.map((option, index) => (
+            <label className="field" key={index}>
+              <span className="field__label">选项 {index + 1}</span>
+              <input className="field__control" value={option.content} onChange={(event) => updateOption(index, event.target.value)} />
+              <span>
+                <input
+                  type={questionType === 'multiple_choice' ? 'checkbox' : 'radio'}
+                  checked={option.is_correct}
+                  onChange={() => markCorrect(index)}
+                />{' '}
+                正确答案
+              </span>
+            </label>
+          ))
+        ) : (
+          <Field label="答案" value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder="可用 | 分隔多个可接受答案" required />
+        )}
         {error ? (
           <div className="form-error" role="alert">
             {error}
@@ -179,4 +197,8 @@ export function BankDetailPage({
       )}
     </section>
   );
+}
+
+function isChoiceQuestion(questionType: string): boolean {
+  return questionType === 'single_choice' || questionType === 'multiple_choice';
 }

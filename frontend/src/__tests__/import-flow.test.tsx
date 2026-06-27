@@ -44,14 +44,14 @@ describe('import flow', () => {
     vi.restoreAllMocks();
   });
 
-  it('creates an import job, shows generating status, then reviews a generated draft', async () => {
+  it('creates an import job, shows processing status, then reviews a generated draft', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const jobs: ImportJob[] = [];
     const completedJob: ImportJob = {
       id: 31,
       bank_id: 20,
       filename: 'questions.pdf',
-      status: 'completed',
+      status: 'reviewing',
       question_count: 1,
       question_types: ['single_choice'],
       difficulty: 'medium',
@@ -67,6 +67,8 @@ describe('import flow', () => {
         stem: '二分查找的前提是什么？',
         question_type: 'single_choice',
         difficulty: 'medium',
+        answer_json: { text: '数组已排序' },
+        answer_text: '数组已排序',
         explanation: '二分查找要求搜索空间有序。',
         options: [
           { id: 1, content: '数组已排序', is_correct: true },
@@ -102,7 +104,7 @@ describe('import flow', () => {
         expect(init?.body).toBeInstanceOf(FormData);
         const created: ImportJob = {
           ...completedJob,
-          status: 'generating',
+          status: 'processing',
           updated_at: '2026-01-04T00:00:01Z'
         };
         jobs.push(created);
@@ -138,7 +140,7 @@ describe('import flow', () => {
     await user.type(within(form).getByLabelText('题目数量'), '1');
     await user.click(within(form).getByRole('button', { name: '开始导入' }));
 
-    expect(await screen.findByText('生成中')).toBeInTheDocument();
+    expect(await screen.findByText('处理中')).toBeInTheDocument();
 
     await act(async () => {
       vi.advanceTimersByTime(2000);

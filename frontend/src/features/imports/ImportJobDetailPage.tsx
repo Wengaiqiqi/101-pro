@@ -10,7 +10,7 @@ interface ImportJobDetailPageProps {
   onJobChange: (job: ImportJob) => void;
 }
 
-const activeStatuses = new Set(['pending', 'parsing', 'processing', 'generating']);
+const activeStatuses = new Set(['pending', 'processing']);
 
 export function ImportJobDetailPage({ job, onBack, onReview, onJobChange }: ImportJobDetailPageProps) {
   const [currentJob, setCurrentJob] = useState(job);
@@ -119,9 +119,7 @@ export function ImportJobDetailPage({ job, onBack, onReview, onJobChange }: Impo
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     pending: '排队中',
-    parsing: '解析中',
     processing: '处理中',
-    generating: '生成中',
     reviewing: '待审核',
     completed: '已完成',
     failed: '失败',

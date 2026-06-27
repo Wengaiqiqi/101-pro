@@ -3,10 +3,12 @@ import type {
   ImportedQuestionDraftPayload,
   ImportJob,
   ImportJobCreate,
+  ImportPublishResponse,
   LoginPayload,
   Question,
   QuestionBank,
   QuestionBankCreate,
+  QuestionOption,
   QuestionPayload,
   RegisterPayload,
   TokenResponse,
@@ -14,6 +16,7 @@ import type {
 } from './types';
 
 const TOKEN_KEY = 'question-bank-token';
+let unauthorizedHandler: (() => void) | null = null;
 
 export class ApiError extends Error {
   status: number;
@@ -40,6 +43,10 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   const token = getToken();
@@ -61,6 +68,9 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
   if (!response.ok) {
     const detail = await parseResponse(response);
+    if (response.status === 401) {
+      unauthorizedHandler?.();
+    }
     throw new ApiError(readErrorMessage(detail, response.statusText), response.status, detail);
   }
 
@@ -165,8 +175,8 @@ export function updateDraft(draftId: number, payload: ImportedQuestionDraftPaylo
   }).then(normalizeDraft);
 }
 
-export function publishDrafts(jobId: number): Promise<void> {
-  return apiRequest<void>(`/api/import-jobs/${jobId}/publish`, {
+export function publishDrafts(jobId: number): Promise<ImportPublishResponse> {
+  return apiRequest<ImportPublishResponse>(`/api/import-jobs/${jobId}/publish`, {
     method: 'POST'
   });
 }
@@ -251,6 +261,8 @@ function normalizeDraft(raw: unknown): ImportedQuestionDraft {
     import_job_id: Number(item.import_job_id),
     stem: String(item.stem ?? ''),
     question_type: String(item.question_type ?? item.type ?? 'single_choice'),
+    answer_json: answer,
+    answer_text: readAnswerTextFromAnswer(answer),
     difficulty: String(item.difficulty ?? 'medium'),
     explanation: typeof item.explanation === 'string' ? item.explanation : '',
     options,
@@ -304,14 +316,25 @@ function serializeDraftPayload(payload: ImportedQuestionDraftPayload) {
     sort_order: option.sort_order ?? option.order_index ?? index
   }));
 
+  const answerJson = payload.answer_json ?? {};
+  const answerText = payload.answer_text?.trim();
+
+  const isChoice = payload.question_type === 'single_choice' || payload.question_type === 'multiple_choice';
+
   return {
     type: payload.question_type,
     stem: payload.stem,
-    options_json: options,
-    answer_json: {
-      label: options.filter((option) => option.is_correct).map((option) => option.label),
-      text: readAnswerText(options)
-    },
+    options_json: isChoice ? options : [],
+    answer_json: isChoice
+      ? {
+          ...answerJson,
+          label: options.filter((option) => option.is_correct).map((option) => option.label),
+          text: readAnswerText(options)
+        }
+      : {
+          ...answerJson,
+          text: answerText || readAnswerTextFromAnswer(answerJson)
+        },
     explanation: payload.explanation ?? '',
     difficulty: payload.difficulty,
     status: payload.status
@@ -323,6 +346,14 @@ function readAnswerText(options: Array<{ label?: string; content: string; is_cor
     .filter((option) => option.is_correct)
     .map((option) => option.label ?? option.content)
     .join(' ') || '待补充';
+}
+
+function readAnswerTextFromAnswer(answer: Record<string, unknown>): string {
+  const value = answer.text ?? answer.answer_text ?? answer.answer ?? answer.label ?? answer.labels;
+  if (Array.isArray(value)) {
+    return value.map(String).join(' ');
+  }
+  return typeof value === 'string' ? value : '';
 }
 
 function optionLabel(index: number): string {
