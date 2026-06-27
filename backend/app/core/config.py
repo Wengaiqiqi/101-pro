@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "postgresql+psycopg://question_bank:question_bank@localhost:5432/question_bank"
     redis_url: str = "redis://localhost:6379/0"
+    import_queue_mode: str = "celery"
     jwt_secret_key: str = "change-me-in-development"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440

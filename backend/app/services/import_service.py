@@ -1,10 +1,12 @@
 from collections.abc import Sequence
+import logging
 from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import get_settings
 from app.models.import_job import ImportJob, ImportJobChunk, ImportedQuestionDraft
 from app.models.question import Question, QuestionOption
 from app.models.user import User
@@ -15,6 +17,7 @@ from app.services.question_service import get_owned_bank
 
 CHOICE_TYPES = {"single_choice", "multiple_choice", "true_false"}
 SUPPORTED_QUESTION_TYPES = CHOICE_TYPES | {"fill_blank", "short_answer"}
+logger = logging.getLogger(__name__)
 
 
 def _not_found() -> HTTPException:
@@ -76,13 +79,19 @@ def retry_import_job(db: Session, user: User, import_job_id: int) -> ImportJob:
     return job
 
 
-def enqueue_import_job(import_job_id: int) -> None:
-    try:
-        from app.tasks.import_tasks import process_import_job_task
+def _dispatch_celery_job(import_job_id: int) -> None:
+    from app.tasks.import_tasks import process_import_job_task
 
-        process_import_job_task.delay(import_job_id)
-    except Exception:
+    process_import_job_task.delay(import_job_id)
+
+
+def enqueue_import_job(import_job_id: int) -> None:
+    if get_settings().import_queue_mode == "local":
         return
+    try:
+        _dispatch_celery_job(import_job_id)
+    except Exception:
+        logger.exception("Could not dispatch import job %s to Celery", import_job_id)
 
 
 def list_drafts(db: Session, user: User, import_job_id: int) -> list[ImportedQuestionDraft]:
