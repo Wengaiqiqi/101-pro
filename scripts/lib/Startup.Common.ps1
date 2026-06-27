@@ -38,6 +38,24 @@ function Assert-MinimumVersion {
     return $actual
 }
 
+function Test-PythonImports {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonCommand,
+        [Parameter(Mandatory = $true)][string[]]$Modules
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "SilentlyContinue"
+        $importExpression = ($Modules | ForEach-Object { "import $_" }) -join "; "
+        & $PythonCommand -c $importExpression 2>$null
+        return $LASTEXITCODE -eq 0
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+}
+
 function Test-TcpPort {
     param(
         [Parameter(Mandatory = $true)][string]$HostName,

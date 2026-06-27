@@ -2,7 +2,8 @@
 param(
     [switch]$SkipInstall,
     [switch]$NoBrowser,
-    [switch]$ResetLogs
+    [switch]$ResetLogs,
+    [switch]$UseDocker
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,6 +13,7 @@ $frontendRoot = Join-Path $repoRoot "frontend"
 $runRoot = Join-Path $repoRoot ".run"
 $logRoot = Join-Path $runRoot "logs"
 $pidFile = Join-Path $runRoot "pids.json"
+$modeFile = Join-Path $runRoot "startup-mode.txt"
 $commonScript = Join-Path $PSScriptRoot "lib\Startup.Common.ps1"
 
 . $commonScript
@@ -20,6 +22,7 @@ $createdRecords = New-Object System.Collections.ArrayList
 $newInfrastructureServices = @()
 $records = @()
 $dockerCommand = $null
+$startupMode = if ($UseDocker) { "docker" } else { "local" }
 
 function Remove-TrackedRecordByName {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -59,17 +62,28 @@ function Add-ProjectRecord {
 
 try {
     Write-StartupStep "Checking platform prerequisites..."
-    $dockerCommand = Assert-CommandAvailable -Name "docker" -InstallHint "Install and start Docker Desktop."
     $pythonCommand = Assert-CommandAvailable -Name "python" -InstallHint "Install Python 3.11 or newer and add it to PATH."
     $nodeCommand = Assert-CommandAvailable -Name "node" -InstallHint "Install Node.js 20 or newer and add it to PATH."
     $npmCommand = Assert-CommandAvailable -Name "npm.cmd" -InstallHint "Install npm with Node.js 20 or newer."
     [void](Assert-MinimumVersion -Command $pythonCommand.Source -Minimum ([version]"3.11") -VersionArguments @("--version"))
     [void](Assert-MinimumVersion -Command $nodeCommand.Source -Minimum ([version]"20.0") -VersionArguments @("--version"))
-    Invoke-CheckedCommand -FilePath $dockerCommand.Source -Arguments @("compose", "version") -WorkingDirectory $repoRoot -Description "Docker Compose check"
+    if ($UseDocker) {
+        $dockerCommand = Assert-CommandAvailable -Name "docker" -InstallHint "Install and start Docker Desktop."
+        Invoke-CheckedCommand -FilePath $dockerCommand.Source -Arguments @("compose", "version") -WorkingDirectory $repoRoot -Description "Docker Compose check"
+    }
 
     [void](New-Item -ItemType Directory -Path $logRoot -Force)
     if ($ResetLogs) {
         Get-ChildItem -LiteralPath $logRoot -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    }
+
+    if ($UseDocker) {
+        $env:IMPORT_QUEUE_MODE = "celery"
+    }
+    else {
+        $sqlitePath = (Join-Path $runRoot "101-pro.db").Replace("\", "/")
+        $env:DATABASE_URL = "sqlite:///$sqlitePath"
+        $env:IMPORT_QUEUE_MODE = "local"
     }
 
     $envPath = Join-Path $backendRoot ".env"
@@ -81,8 +95,7 @@ try {
     $backendManifest = Join-Path $backendRoot "pyproject.toml"
     $backendHash = Get-ManifestHash -Path $backendManifest
     $backendStamp = Join-Path $runRoot "backend-deps.sha256"
-    & $pythonCommand.Source -c "import alembic, celery, fastapi, sqlalchemy" 2>$null
-    $backendImportsReady = $LASTEXITCODE -eq 0
+    $backendImportsReady = Test-PythonImports -PythonCommand $pythonCommand.Source -Modules @("alembic", "celery", "fastapi", "sqlalchemy")
     $backendInstallNeeded = (-not $backendImportsReady) -or ((Read-TextFile -Path $backendStamp) -ne $backendHash)
     if ($backendInstallNeeded) {
         if ($SkipInstall) {
@@ -116,31 +129,57 @@ try {
     $records = @(Get-TrackedProcesses -PidFile $pidFile | Where-Object { Test-TrackedProcess -Record $_ })
     Save-TrackedProcesses -PidFile $pidFile -Processes $records
 
-    Push-Location $repoRoot
-    try {
-        $runningBefore = @(& $dockerCommand.Source compose ps --status running --services 2>$null)
-        if ($LASTEXITCODE -ne 0) {
-            throw "Could not inspect Docker Compose services. Is Docker Desktop running?"
-        }
+    $previousMode = Read-TextFile -Path $modeFile
+    if (-not $previousMode -and ($records | Where-Object { $_.name -eq "celery" })) {
+        $previousMode = "docker"
     }
-    finally {
-        Pop-Location
+    if ($previousMode -and $previousMode -ne $startupMode) {
+        Write-StartupStep "Switching runtime mode from $previousMode to $startupMode..."
+        foreach ($record in $records) {
+            if (Test-TrackedProcess -Record $record) {
+                Stop-TrackedProcessTree -Record $record
+            }
+        }
+        $records = @()
+        Save-TrackedProcesses -PidFile $pidFile -Processes $records
+    }
+    else {
+        $incompatibleWorkerName = if ($UseDocker) { "local-worker" } else { "celery" }
+        $incompatibleWorker = $records | Where-Object { $_.name -eq $incompatibleWorkerName } | Select-Object -First 1
+        if ($null -ne $incompatibleWorker -and (Test-TrackedProcess -Record $incompatibleWorker)) {
+            Stop-TrackedProcessTree -Record $incompatibleWorker
+        }
+        $records = @($records | Where-Object { $_.name -ne $incompatibleWorkerName })
+        Save-TrackedProcesses -PidFile $pidFile -Processes $records
     }
 
-    foreach ($servicePort in @(
-        @{ Service = "postgres"; Port = 5432 },
-        @{ Service = "redis"; Port = 6379 }
-    )) {
-        if ((Test-TcpPort -HostName "127.0.0.1" -Port $servicePort.Port) -and ($runningBefore -notcontains $servicePort.Service)) {
-            throw "Port $($servicePort.Port) is occupied, but Docker Compose service '$($servicePort.Service)' is not running."
+    if ($UseDocker) {
+        Push-Location $repoRoot
+        try {
+            $runningBefore = @(& $dockerCommand.Source compose ps --status running --services 2>$null)
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not inspect Docker Compose services. Is Docker Desktop running?"
+            }
         }
-    }
+        finally {
+            Pop-Location
+        }
 
-    Write-StartupStep "Starting PostgreSQL and Redis..."
-    Invoke-CheckedCommand -FilePath $dockerCommand.Source -Arguments @("compose", "up", "-d", "postgres", "redis") -WorkingDirectory $repoRoot -Description "Infrastructure startup"
-    $newInfrastructureServices = @(@("postgres", "redis") | Where-Object { $runningBefore -notcontains $_ })
-    Wait-TcpPort -HostName "127.0.0.1" -Port 5432 -TimeoutSeconds 60
-    Wait-TcpPort -HostName "127.0.0.1" -Port 6379 -TimeoutSeconds 60
+        foreach ($servicePort in @(
+            @{ Service = "postgres"; Port = 5432 },
+            @{ Service = "redis"; Port = 6379 }
+        )) {
+            if ((Test-TcpPort -HostName "127.0.0.1" -Port $servicePort.Port) -and ($runningBefore -notcontains $servicePort.Service)) {
+                throw "Port $($servicePort.Port) is occupied, but Docker Compose service '$($servicePort.Service)' is not running."
+            }
+        }
+
+        Write-StartupStep "Starting PostgreSQL and Redis..."
+        Invoke-CheckedCommand -FilePath $dockerCommand.Source -Arguments @("compose", "up", "-d", "postgres", "redis") -WorkingDirectory $repoRoot -Description "Infrastructure startup"
+        $newInfrastructureServices = @(@("postgres", "redis") | Where-Object { $runningBefore -notcontains $_ })
+        Wait-TcpPort -HostName "127.0.0.1" -Port 5432 -TimeoutSeconds 60
+        Wait-TcpPort -HostName "127.0.0.1" -Port 6379 -TimeoutSeconds 60
+    }
 
     Write-StartupStep "Applying database migrations..."
     Invoke-CheckedCommand -FilePath $pythonCommand.Source -Arguments @("-m", "alembic", "upgrade", "head") -WorkingDirectory $backendRoot -Description "Database migration"
@@ -155,14 +194,25 @@ try {
         Add-ProjectRecord -Record $backendRecord
     }
 
-    $celeryRecord = $records | Where-Object { $_.name -eq "celery" } | Select-Object -First 1
-    if ($null -eq $celeryRecord) {
-        Write-StartupStep "Starting Celery worker..."
-        $celeryRecord = Start-TrackedProcess -Name "celery" -FilePath $pythonCommand.Source -Arguments @("-m", "celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--pool=solo") -WorkingDirectory $backendRoot -LogDirectory $logRoot
-        Add-ProjectRecord -Record $celeryRecord
+    if ($UseDocker) {
+        $workerName = "celery"
+        $workerLabel = "Celery worker"
+        $workerArguments = @("-m", "celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--pool=solo")
     }
     else {
-        Write-StartupStep "Celery is already running; reusing PID $($celeryRecord.pid)."
+        $workerName = "local-worker"
+        $workerLabel = "local import worker"
+        $workerArguments = @("-m", "app.tasks.local_worker")
+    }
+
+    $workerRecord = $records | Where-Object { $_.name -eq $workerName } | Select-Object -First 1
+    if ($null -eq $workerRecord) {
+        Write-StartupStep "Starting $workerLabel..."
+        $workerRecord = Start-TrackedProcess -Name $workerName -FilePath $pythonCommand.Source -Arguments $workerArguments -WorkingDirectory $backendRoot -LogDirectory $logRoot
+        Add-ProjectRecord -Record $workerRecord
+    }
+    else {
+        Write-StartupStep "$workerLabel is already running; reusing PID $($workerRecord.pid)."
     }
 
     $frontendRecord = Resolve-HealthyTrackedService -Name "frontend" -Url $frontendUrl
@@ -176,9 +226,11 @@ try {
     Write-StartupStep "Waiting for application health checks..."
     Wait-HttpEndpoint -Url $backendUrl -TimeoutSeconds 60
     Wait-HttpEndpoint -Url $frontendUrl -TimeoutSeconds 60
+    Write-TextFile -Path $modeFile -Value $startupMode
 
     Write-Host ""
     Write-Host "101 Pro is running." -ForegroundColor Green
+    Write-Host "Runtime mode: $startupMode"
     Write-Host "Frontend: $frontendUrl"
     Write-Host "Backend health: $backendUrl"
     Write-Host "OpenAPI: http://127.0.0.1:8000/docs"
