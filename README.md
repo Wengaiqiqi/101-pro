@@ -13,9 +13,38 @@
 
 - Python 3.11+
 - Node.js 20+
-- Docker with Docker Compose
+- Docker Desktop with Docker Compose
+
+## One-Click Start on Windows
+
+Make sure Docker Desktop is running, then double-click `start.cmd` in the repository root. The launcher will:
+
+- verify Python, Node.js, npm, Docker, and Docker Compose;
+- create `backend/.env` from `.env.example` only when it does not already exist;
+- install or refresh backend and frontend dependencies when their manifests change;
+- start PostgreSQL and Redis, apply database migrations, and launch FastAPI, Celery, and Vite;
+- wait for the health checks and open `http://127.0.0.1:5173`.
+
+Double-click `stop.cmd` to stop the application processes and the local PostgreSQL and Redis containers. Runtime PID state and logs are stored under `.run/`, which is ignored by Git.
+
+Advanced PowerShell options:
+
+```powershell
+# Keep existing logs, skip dependency installation, and do not open a browser.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -SkipInstall -NoBrowser
+
+# Clear old logs before startup.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -ResetLogs
+
+# Stop application processes but leave PostgreSQL and Redis running.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1 -KeepInfrastructure
+```
+
+If startup fails, inspect `.run/logs/`. The script stops only the processes and containers it started during that attempt.
 
 ## Local Setup
+
+The following manual workflow remains available for development and debugging.
 
 Start PostgreSQL and Redis from the repository root:
 
