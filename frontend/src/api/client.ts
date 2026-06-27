@@ -5,6 +5,13 @@ import type {
   ImportJobCreate,
   ImportPublishResponse,
   LoginPayload,
+  ModelConnectionTestResponse,
+  ModelSettings,
+  ModelSettingsPayload,
+  PracticeAnswer,
+  PracticeAnswerPayload,
+  PracticeSession,
+  PracticeSessionCreate,
   Question,
   QuestionBank,
   QuestionBankCreate,
@@ -12,7 +19,8 @@ import type {
   QuestionPayload,
   RegisterPayload,
   TokenResponse,
-  User
+  User,
+  WrongQuestion
 } from './types';
 
 const TOKEN_KEY = 'question-bank-token';
@@ -177,6 +185,57 @@ export function updateDraft(draftId: number, payload: ImportedQuestionDraftPaylo
 
 export function publishDrafts(jobId: number): Promise<ImportPublishResponse> {
   return apiRequest<ImportPublishResponse>(`/api/import-jobs/${jobId}/publish`, {
+    method: 'POST'
+  });
+}
+
+export function createPracticeSession(payload: PracticeSessionCreate): Promise<PracticeSession> {
+  return apiRequest<PracticeSession>('/api/practice-sessions', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getPracticeSession(sessionId: number): Promise<PracticeSession> {
+  return apiRequest<PracticeSession>(`/api/practice-sessions/${sessionId}`);
+}
+
+export function submitPracticeAnswer(sessionId: number, payload: PracticeAnswerPayload): Promise<PracticeAnswer> {
+  return apiRequest<PracticeAnswer>(`/api/practice-sessions/${sessionId}/answers`, {
+    method: 'POST',
+    body: JSON.stringify({ elapsed_seconds: 0, ...payload })
+  });
+}
+
+export function finishPracticeSession(sessionId: number): Promise<PracticeSession> {
+  return apiRequest<PracticeSession>(`/api/practice-sessions/${sessionId}/finish`, {
+    method: 'POST'
+  });
+}
+
+export function listWrongQuestions(): Promise<WrongQuestion[]> {
+  return apiRequest<WrongQuestion[]>('/api/wrong-questions');
+}
+
+export function markWrongQuestionMastered(wrongQuestionId: number): Promise<WrongQuestion> {
+  return apiRequest<WrongQuestion>(`/api/wrong-questions/${wrongQuestionId}/mastered`, {
+    method: 'POST'
+  });
+}
+
+export function getModelSettings(): Promise<ModelSettings> {
+  return apiRequest<ModelSettings>('/api/model-settings');
+}
+
+export function saveModelSettings(payload: ModelSettingsPayload): Promise<ModelSettings> {
+  return apiRequest<ModelSettings>('/api/model-settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function testModelSettings(): Promise<ModelConnectionTestResponse> {
+  return apiRequest<ModelConnectionTestResponse>('/api/model-settings/test', {
     method: 'POST'
   });
 }

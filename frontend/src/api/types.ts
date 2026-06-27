@@ -129,21 +129,69 @@ export interface ImportedQuestionDraftPayload {
 }
 
 export interface ModelSettings {
+  provider: string | null;
+  base_url: string | null;
+  model: string | null;
+  has_api_key: boolean;
+  platform_available: boolean;
+}
+
+export interface ModelSettingsPayload {
+  provider: string;
+  base_url: string;
+  model: string;
+  api_key?: string;
+}
+
+export interface ModelConnectionTestResponse {
+  ok: boolean;
   provider: string;
   model: string;
-  api_key_masked?: string;
-  temperature?: number;
-  max_tokens?: number;
-  updated_at?: string;
+  message?: string | null;
+}
+
+export interface PracticeAnswer {
+  id: number;
+  session_id: number;
+  question_id: number;
+  user_answer_json: { value?: unknown } & Record<string, unknown>;
+  is_correct: boolean;
+  elapsed_seconds: number;
+  created_at: string;
+}
+
+export interface PracticeSessionCreate {
+  bank_id: number;
+  mode: string;
+  question_count: number;
+}
+
+export interface PracticeAnswerPayload {
+  question_id: number;
+  user_answer: string | string[];
+  elapsed_seconds?: number;
 }
 
 export interface PracticeSession {
   id: number;
+  user_id: number;
   bank_id: number;
-  status: string;
-  total_questions: number;
-  correct_count: number;
+  mode: string;
+  question_count: number;
+  started_at: string;
+  finished_at: string | null;
+  score: number;
+  accuracy: number;
+  answers: PracticeAnswer[];
+}
+
+export interface WrongQuestion {
+  id: number;
+  user_id: number;
+  question_id: number;
   wrong_count: number;
+  last_wrong_at: string | null;
+  mastery_status: string;
   created_at: string;
   updated_at: string;
 }

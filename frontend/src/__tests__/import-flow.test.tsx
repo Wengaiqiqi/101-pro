@@ -100,6 +100,10 @@ describe('import flow', () => {
         return jsonResponse(jobs);
       }
 
+      if (url === '/api/wrong-questions' && method === 'GET') {
+        return jsonResponse([]);
+      }
+
       if (url === '/api/import-jobs' && method === 'POST') {
         expect(init?.body).toBeInstanceOf(FormData);
         const created: ImportJob = {

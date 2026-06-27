@@ -66,6 +66,10 @@ describe('bank flow', () => {
         return jsonResponse([]);
       }
 
+      if (url === '/api/wrong-questions' && method === 'GET') {
+        return jsonResponse([]);
+      }
+
       if (url === '/api/question-banks' && method === 'POST') {
         const payload = JSON.parse(init?.body?.toString() ?? '{}');
         const created: QuestionBank = {

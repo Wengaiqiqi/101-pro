@@ -48,12 +48,12 @@ export function DashboardPage({
         />
         <Metric
           label="最近练习"
-          value={recentPractice ? `${recentPractice.correct_count}/${recentPractice.total_questions}` : '0'}
+          value={recentPractice ? `${recentPractice.score}/${recentPractice.question_count}` : '0'}
           tone="neutral"
           actionLabel="开始练习"
           onAction={onNavigatePractice}
           icon={<PlayCircle size={15} />}
-          note={recentPractice ? recentPractice.status : '尚未开始'}
+          note={recentPractice ? (recentPractice.finished_at ? `${recentPractice.accuracy}% 正确率` : '进行中') : '尚未开始'}
         />
         <Metric
           label="错题"

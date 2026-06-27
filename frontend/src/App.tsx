@@ -11,13 +11,13 @@ import {
   listImportJobs,
   listQuestionBanks,
   listQuestions,
+  listWrongQuestions,
   setUnauthorizedHandler,
   updateQuestion
 } from './api/client';
-import type { ImportJob, ImportJobCreate, Question, QuestionBank, QuestionPayload, User } from './api/types';
+import type { ImportJob, ImportJobCreate, Question, QuestionBank, QuestionPayload, User, WrongQuestion } from './api/types';
 import { AppShell } from './components/AppShell';
 import type { AppPage } from './components/AppShell';
-import { EmptyState } from './components/EmptyState';
 import { AuthPage } from './features/auth/AuthPage';
 import { clearAuthState } from './features/auth/authStore';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -25,25 +25,20 @@ import { DraftReviewPage } from './features/imports/DraftReviewPage';
 import { ImportJobDetailPage } from './features/imports/ImportJobDetailPage';
 import { ImportJobsPage } from './features/imports/ImportJobsPage';
 import { NewImportPage } from './features/imports/NewImportPage';
+import { PracticePage } from './features/practice/PracticePage';
+import { WrongQuestionsPage } from './features/practice/WrongQuestionsPage';
 import { BankDetailPage } from './features/questionBanks/BankDetailPage';
 import { QuestionBankListPage } from './features/questionBanks/QuestionBankListPage';
+import { ModelSettingsPage } from './features/settings/ModelSettingsPage';
 
 type ImportView = 'list' | 'new' | 'detail' | 'drafts';
-
-const pageDescriptions: Record<AppPage, string> = {
-  dashboard: '集中查看题库、导入和练习进度。',
-  banks: '管理私有题库并准备后续题目维护。',
-  imports: '上传文档后生成草稿题目。',
-  practice: '从题库发起练习并记录结果。',
-  mistakes: '复盘错题与掌握状态。',
-  models: '配置模型服务和 API 凭据。'
-};
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
   const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [importJobs, setImportJobs] = useState<ImportJob[]>([]);
+  const [wrongQuestions, setWrongQuestions] = useState<WrongQuestion[]>([]);
   const [selectedBankId, setSelectedBankId] = useState<number | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [importView, setImportView] = useState<ImportView>('list');
@@ -102,6 +97,11 @@ export function App() {
     setImportJobs(items);
   }, []);
 
+  const refreshWrongQuestions = useCallback(async () => {
+    const items = await listWrongQuestions();
+    setWrongQuestions(items);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -111,10 +111,11 @@ export function App() {
       }
 
       try {
-        const [bankItems, jobItems] = await Promise.all([listQuestionBanks(), listImportJobs()]);
+        const [bankItems, jobItems, wrongItems] = await Promise.all([listQuestionBanks(), listImportJobs(), listWrongQuestions()]);
         if (isMounted) {
           setBanks(bankItems);
           setImportJobs(jobItems);
+          setWrongQuestions(wrongItems);
           setLoadError(null);
         }
       } catch (caught) {
@@ -170,6 +171,7 @@ export function App() {
   function resetWorkspace() {
     setBanks([]);
     setImportJobs([]);
+    setWrongQuestions([]);
     setSelectedBankId(null);
     setQuestions([]);
     setImportView('list');
@@ -294,7 +296,7 @@ export function App() {
         <DashboardPage
           banks={banks}
           importJobs={[...importJobs].sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())}
-          wrongQuestionCount={0}
+          wrongQuestionCount={wrongQuestions.filter((item) => item.mastery_status !== 'mastered').length}
           onNavigateBanks={() => handleNavigate('banks')}
           onNavigateImports={() => handleNavigate('imports')}
           onNavigatePractice={() => handleNavigate('practice')}
@@ -349,24 +351,17 @@ export function App() {
         <DraftReviewPage job={selectedJob} onBack={() => setImportView('detail')} onPublished={handlePublished} />
       ) : null}
 
-      {activePage !== 'dashboard' && activePage !== 'banks' && activePage !== 'imports' ? (
-        <section className="panel">
-          <EmptyState title={routeTitle(activePage)} description={pageDescriptions[activePage]} />
-        </section>
+      {activePage === 'practice' ? <PracticePage banks={banks} wrongQuestions={wrongQuestions} onPracticeFinished={refreshWrongQuestions} /> : null}
+
+      {activePage === 'mistakes' ? (
+        <WrongQuestionsPage
+          banks={banks}
+          wrongQuestions={wrongQuestions}
+          onChanged={(updated) => setWrongQuestions((current) => current.map((item) => (item.id === updated.id ? updated : item)))}
+        />
       ) : null}
+
+      {activePage === 'models' ? <ModelSettingsPage /> : null}
     </AppShell>
   );
-}
-
-function routeTitle(page: AppPage): string {
-  const titles: Record<AppPage, string> = {
-    dashboard: '工作台',
-    banks: '题库',
-    imports: '文档导入',
-    practice: '练习',
-    mistakes: '错题本',
-    models: '模型设置'
-  };
-
-  return titles[page];
 }
