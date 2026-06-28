@@ -1,0 +1,333 @@
+import { FormEvent, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { listDrafts, publishDrafts, updateDraft } from '../../api/client';
+import type { ImportedQuestionDraft, ImportJob, QuestionOption } from '../../api/types';
+import { EmptyState } from '../../components/EmptyState';
+import { Field } from '../../components/Field';
+import { LatexText } from '../../components/LatexText';
+import { StatusBadge } from '../../components/StatusBadge';
+import { isChoiceQuestion } from '../../lib/utils';
+import { getDraftStatusLabel } from '../../lib/statusHelpers';
+
+interface DraftReviewPageProps {
+  job: ImportJob;
+  onPublished: () => void;
+}
+
+export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
+  const navigate = useNavigate();
+  const [drafts, setDrafts] = useState<ImportedQuestionDraft[]>([]);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [stem, setStem] = useState('');
+  const [explanation, setExplanation] = useState('');
+  const [answerText, setAnswerText] = useState('');
+  const [options, setOptions] = useState<QuestionOption[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function load() {
+      try {
+        const items = await listDrafts(job.id);
+        if (isMounted) {
+          setDrafts(items);
+          setError(null);
+        }
+      } catch (caught) {
+        if (isMounted) {
+          setError(caught instanceof Error ? caught.message : '草稿加载失败');
+        }
+      }
+    }
+
+    void load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [job.id]);
+
+  function startEdit(draft: ImportedQuestionDraft) {
+    setEditingId(draft.id);
+    setStem(draft.stem);
+    setExplanation(draft.explanation ?? '');
+    setAnswerText(draft.answer_text);
+    setOptions(draft.options);
+  }
+
+  function updateOption(index: number, content: string) {
+    setOptions((current) => current.map((option, optionIndex) => (optionIndex === index ? { ...option, content } : option)));
+  }
+
+  function toggleOptionCorrect(index: number) {
+    setOptions((current) => current.map((option, optionIndex) => (optionIndex === index ? { ...option, is_correct: !option.is_correct } : option)));
+  }
+
+  function computedAnswerText(): string {
+    const correct = options.filter((o) => o.is_correct);
+    if (correct.length === 0) return answerText;
+    return correct.map((o) => o.label ?? o.content).join(' ');
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const draft = drafts.find((item) => item.id === editingId);
+    if (!draft) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const updated = await updateDraft(draft.id, {
+        stem,
+        question_type: draft.question_type,
+        answer_json: draft.answer_json,
+        answer_text: computedAnswerText(),
+        difficulty: draft.difficulty,
+        explanation,
+        options,
+        status: draft.status,
+      });
+      setDrafts((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setEditingId(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '草稿保存失败');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handlePublish() {
+    setIsPublishing(true);
+    setError(null);
+
+    try {
+      await publishDrafts(job.id);
+      onPublished();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '发布失败');
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
+  async function handleApprove(draft: ImportedQuestionDraft) {
+    setError(null);
+    try {
+      const updated = await updateDraft(draft.id, {
+        stem: draft.stem,
+        question_type: draft.question_type,
+        answer_json: draft.answer_json,
+        answer_text: draft.answer_text,
+        difficulty: draft.difficulty,
+        explanation: draft.explanation,
+        options: draft.options,
+        status: 'approved',
+      });
+      setDrafts((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '草稿审核失败');
+    }
+  }
+
+  const approvedCount = drafts.filter((draft) => draft.status === 'approved').length;
+  const pendingDrafts = drafts.filter((draft) => draft.status === 'pending');
+  const [isApprovingAll, setIsApprovingAll] = useState(false);
+
+  async function handleApproveAll() {
+    setIsApprovingAll(true);
+    setError(null);
+    try {
+      // Sequential for SQLite compatibility
+      const updated = [...drafts];
+      for (const draft of pendingDrafts) {
+        try {
+          const result = await updateDraft(draft.id, {
+            stem: draft.stem,
+            question_type: draft.question_type,
+            answer_json: draft.answer_json,
+            answer_text: draft.answer_text,
+            difficulty: draft.difficulty,
+            explanation: draft.explanation,
+            options: draft.options,
+            status: 'approved',
+          });
+          const idx = updated.findIndex((d) => d.id === result.id);
+          if (idx !== -1) updated[idx] = result;
+        } catch {
+          // Skip failed drafts, continue with others
+        }
+      }
+      setDrafts(updated);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '批量审核失败');
+    } finally {
+      setIsApprovingAll(false);
+    }
+  }
+
+  return (
+    <section className="border border-slate-200 rounded-xl bg-white shadow-sm" aria-labelledby="draft-review-title">
+      <div className="flex items-center justify-between gap-4 px-4 py-3.5 border-b border-slate-100">
+        <div>
+          <h2 id="draft-review-title" className="m-0 text-lg font-bold text-slate-900">审核草稿</h2>
+          <p className="mt-1 text-sm text-slate-500">{job.filename}</p>
+        </div>
+        <button
+          className="inline-flex items-center gap-2 min-h-[36px] px-3 rounded-lg border border-slate-300 text-slate-700 bg-white text-[13px] font-bold hover:bg-slate-50"
+          type="button"
+          onClick={() => navigate(`/imports/${job.id}`)}
+        >
+          返回任务
+        </button>
+      </div>
+
+      {error ? (
+        <div className="mx-4 mt-3 px-3 py-2.5 border border-orange-300 rounded-lg text-amber-800 bg-orange-50" role="alert">
+          {error}
+        </div>
+      ) : null}
+
+      {editingId ? (
+        <form className="grid gap-4 p-4 border-b border-slate-100" aria-label="编辑草稿" onSubmit={handleSave}>
+          <div>
+            <Field label="题干" value={stem} onChange={(event) => setStem(event.target.value)} required />
+            {stem && <div className="mt-1 p-2 rounded bg-slate-50 text-[12px] text-slate-600"><LatexText text={stem} /></div>}
+          </div>
+          <Field label="解析" value={explanation} onChange={(event) => setExplanation(event.target.value)} />
+          {(() => {
+            const editingDraft = drafts.find((item) => item.id === editingId);
+            return editingDraft && isChoiceQuestion(editingDraft.question_type);
+          })() ? (
+            <>
+              {options.map((option, index) => (
+                <div key={index} className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Field
+                      label={`选项 ${option.label ?? String.fromCharCode(65 + index)}`}
+                      value={option.content}
+                      onChange={(event) => updateOption(index, event.target.value)}
+                    />
+                    {option.content && <div className="mt-0.5 text-[11px] text-slate-500"><LatexText text={option.content} /></div>}
+                  </div>
+                  <button
+                    type="button"
+                    className={`min-h-[40px] px-3 rounded-md border text-[12px] font-bold transition-all ${
+                      option.is_correct
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'
+                    }`}
+                    onClick={() => toggleOptionCorrect(index)}
+                    title={option.is_correct ? '正确答案' : '标记为正确答案'}
+                  >
+                    {option.is_correct ? '✓ 正确' : '标记正确'}
+                  </button>
+                </div>
+              ))}
+              <div className="text-[12px] text-slate-500 font-medium">
+                当前答案：{computedAnswerText() || '未选择'}
+              </div>
+            </>
+          ) : (
+            <Field label="答案" value={answerText} onChange={(event) => setAnswerText(event.target.value)} required />
+          )}
+          <button
+            className="w-full inline-flex items-center justify-center gap-2 min-h-[38px] rounded-lg border border-teal-600 bg-teal-600 text-white text-[13px] font-bold hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            type="submit"
+            disabled={isSaving}
+          >
+            保存草稿
+          </button>
+        </form>
+      ) : null}
+
+      {drafts.length ? (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className="px-3.5 py-2.5 border-b border-slate-100 text-left text-xs font-extrabold text-slate-500 bg-slate-50">题干</th>
+                  <th className="px-3.5 py-2.5 border-b border-slate-100 text-left text-xs font-extrabold text-slate-500 bg-slate-50">题型</th>
+                  <th className="px-3.5 py-2.5 border-b border-slate-100 text-left text-xs font-extrabold text-slate-500 bg-slate-50">难度</th>
+                  <th className="px-3.5 py-2.5 border-b border-slate-100 text-left text-xs font-extrabold text-slate-500 bg-slate-50">选项</th>
+                  <th className="px-3.5 py-2.5 border-b border-slate-100 text-left text-xs font-extrabold text-slate-500 bg-slate-50">答案</th>
+                  <th className="px-3.5 py-2.5 border-b border-slate-100 text-left text-xs font-extrabold text-slate-500 bg-slate-50">状态</th>
+                  <th className="px-3.5 py-2.5 border-b border-slate-100 text-left text-xs font-extrabold text-slate-500 bg-slate-50">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drafts.map((draft) => (
+                  <tr key={draft.id} className="hover:bg-slate-50">
+                    <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700 max-w-[300px]"><LatexText text={draft.stem} /></td>
+                    <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700">{draft.question_type}</td>
+                    <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700">{draft.difficulty}</td>
+                    <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700">
+                      {draft.options.length > 0 ? draft.options.map((option, index) => (
+                        <span key={`${draft.id}-${index}`} className={option.is_correct ? 'text-emerald-700 font-bold' : ''}>
+                          {option.label ?? String.fromCharCode(65 + index)}. <LatexText text={option.content} />
+                          {option.is_correct ? ' ✓' : ''}
+                          {index < draft.options.length - 1 ? ' / ' : ''}
+                        </span>
+                      )) : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700 font-bold text-emerald-700">
+                      {draft.answer_text || '—'}
+                    </td>
+                    <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700">
+                      <StatusBadge className={draft.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : ''}>
+                        {getDraftStatusLabel(draft.status)}
+                      </StatusBadge>
+                    </td>
+                    <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700">
+                      <div className="flex gap-2">
+                        <button className="border-0 bg-transparent text-teal-600 text-[13px] font-bold hover:underline" type="button" onClick={() => startEdit(draft)}>
+                          编辑
+                        </button>
+                        <button className="border-0 bg-transparent text-teal-600 text-[13px] font-bold hover:underline" type="button" onClick={() => void handleApprove(draft)}>
+                          通过
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between gap-4 px-4 py-3.5 border-t border-slate-100">
+            <div className="flex items-center gap-3">
+              {pendingDrafts.length > 0 && (
+                <button
+                  className="inline-flex items-center justify-center gap-2 min-h-[38px] px-4 rounded-lg border border-slate-300 bg-white text-slate-700 text-[13px] font-bold hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                  type="button"
+                  disabled={isApprovingAll}
+                  onClick={() => void handleApproveAll()}
+                >
+                  {isApprovingAll ? '审核中...' : `一键全部通过 (${pendingDrafts.length})`}
+                </button>
+              )}
+              <span className="text-[12px] text-slate-400">
+                已通过 {approvedCount} / {drafts.length}
+              </span>
+            </div>
+            <button
+              className="inline-flex items-center justify-center gap-2 min-h-[38px] px-4 rounded-lg border border-teal-600 bg-teal-600 text-white text-[13px] font-bold hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              type="button"
+              disabled={isPublishing}
+              onClick={handlePublish}
+            >
+              {isPublishing ? '发布中...' : '发布到题库'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <EmptyState title="暂无草稿" description="生成完成后会在这里显示待审核题目。" />
+      )}
+    </section>
+  );
+}
