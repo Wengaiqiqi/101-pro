@@ -244,10 +244,18 @@ try {
 catch {
     Write-Host ""
     Write-Host "101 Pro startup failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ""
 
+    # Clean up processes created during this run
+    $cleanupFailures = @()
     foreach ($record in @($createdRecords)) {
         if (Test-TrackedProcess -Record $record) {
-            Stop-TrackedProcessTree -Record $record
+            try {
+                Stop-TrackedProcessTree -Record $record
+            }
+            catch {
+                $cleanupFailures += $record
+            }
         }
     }
     if ($createdRecords.Count -gt 0) {
@@ -256,6 +264,7 @@ catch {
         Save-TrackedProcesses -PidFile $pidFile -Processes $records
     }
 
+    # Clean up Docker infrastructure if started
     if ($newInfrastructureServices.Count -gt 0 -and $null -ne $dockerCommand) {
         try {
             Invoke-CheckedCommand -FilePath $dockerCommand.Source -Arguments (@("compose", "stop") + $newInfrastructureServices) -WorkingDirectory $repoRoot -Description "Infrastructure cleanup"
@@ -265,8 +274,30 @@ catch {
         }
     }
 
+    # Show diagnostic info
     if (Test-Path -LiteralPath $logRoot) {
         Write-Host "Logs: $logRoot" -ForegroundColor Yellow
+        $backendErrLog = Join-Path $logRoot "backend.err.log"
+        if (Test-Path -LiteralPath $backendErrLog) {
+            $lastLines = Get-Content -LiteralPath $backendErrLog -Tail 5 -ErrorAction SilentlyContinue
+            if ($lastLines) {
+                Write-Host ""
+                Write-Host "Last backend error log entries:" -ForegroundColor Yellow
+                foreach ($line in $lastLines) {
+                    Write-Host "  $line" -ForegroundColor DarkGray
+                }
+            }
+        }
     }
+
+    if ($cleanupFailures.Count -gt 0) {
+        Write-Host ""
+        Write-Host "Warning: Could not clean up the following processes:" -ForegroundColor Yellow
+        foreach ($proc in $cleanupFailures) {
+            Write-Host "  - $($proc.name) (PID $($proc.pid))" -ForegroundColor Yellow
+            Write-Host "    Manual cleanup: taskkill /F /PID $($proc.pid) /T" -ForegroundColor Cyan
+        }
+    }
+
     exit 1
 }

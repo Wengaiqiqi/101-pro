@@ -4,8 +4,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $requiredFiles = @(
     "start.cmd",
     "stop.cmd",
+    "restart.cmd",
     "scripts/start.ps1",
     "scripts/stop.ps1",
+    "scripts/restart.ps1",
     "scripts/lib/Startup.Common.ps1"
 )
 
@@ -19,6 +21,7 @@ foreach ($relativePath in $requiredFiles) {
 $powerShellFiles = @(
     "scripts/start.ps1",
     "scripts/stop.ps1",
+    "scripts/restart.ps1",
     "scripts/lib/Startup.Common.ps1",
     "scripts/Test-OneClickScripts.ps1"
 )
@@ -54,6 +57,14 @@ if ($stopLauncher -notmatch [regex]::Escape('-ExecutionPolicy Bypass')) {
     throw "stop.cmd must use ExecutionPolicy Bypass"
 }
 
+$restartLauncher = Get-Content -LiteralPath (Join-Path $repoRoot "restart.cmd") -Raw
+if ($restartLauncher -notmatch [regex]::Escape('%~dp0scripts\restart.ps1')) {
+    throw "restart.cmd does not resolve scripts\restart.ps1 relative to the repository root"
+}
+if ($restartLauncher -notmatch [regex]::Escape('-ExecutionPolicy Bypass')) {
+    throw "restart.cmd must use ExecutionPolicy Bypass"
+}
+
 $startScript = Get-Content -LiteralPath (Join-Path $repoRoot "scripts/start.ps1") -Raw
 $stopScript = Get-Content -LiteralPath (Join-Path $repoRoot "scripts/stop.ps1") -Raw
 $commonScript = Get-Content -LiteralPath (Join-Path $repoRoot "scripts/lib/Startup.Common.ps1") -Raw
@@ -80,6 +91,19 @@ if ($dockerGuardIndex -lt 0 -or $dockerLookupIndex -lt $dockerGuardIndex) {
 if ($stopScript -notmatch "\[switch\]\s*\`$KeepInfrastructure") {
     throw "scripts/stop.ps1 is missing -KeepInfrastructure"
 }
+if ($stopScript -notmatch "\[switch\]\s*\`$Force") {
+    throw "scripts/stop.ps1 is missing -Force"
+}
+
+$restartScript = Get-Content -LiteralPath (Join-Path $repoRoot "scripts/restart.ps1") -Raw
+foreach ($requiredFlag in @("SkipInstall", "NoBrowser", "ResetLogs", "Force")) {
+    if ($restartScript -notmatch "\[switch\]\s*\`$$requiredFlag") {
+        throw "scripts/restart.ps1 is missing -$requiredFlag"
+    }
+}
+if ($restartScript -notmatch "\[switch\]\s*\`$UseDocker") {
+    throw "scripts/restart.ps1 is missing -UseDocker"
+}
 if ($stopScript -notmatch [regex]::Escape('startup-mode.txt')) {
     throw "Shutdown must read the recorded startup mode"
 }
@@ -94,6 +118,14 @@ if ($commonScript -notmatch "Start-Process[\s\S]*-WindowStyle\s+Hidden") {
 $pythonCommand = Get-Command "python" -ErrorAction Stop
 if (Test-PythonImports -PythonCommand $pythonCommand.Source -Modules @("definitely_missing_101_pro_module")) {
     throw "Missing Python imports must return false"
+}
+
+$readme = Get-Content -LiteralPath (Join-Path $repoRoot "README.md") -Raw
+if ($readme -notmatch "does not require Docker") {
+    throw "README must state that default startup does not require Docker"
+}
+if ($readme -notmatch [regex]::Escape("scripts/start.ps1 -UseDocker")) {
+    throw "README must document optional Docker startup"
 }
 
 Write-Host "One-click startup scripts passed static validation." -ForegroundColor Green

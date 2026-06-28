@@ -72,7 +72,7 @@ describe('import flow', () => {
           { id: 1, content: '数组已排序', is_correct: true },
           { id: 2, content: '数组长度为偶数', is_correct: false }
         ],
-        status: 'ready',
+        status: 'approved',
         created_at: '2026-01-04T00:00:05Z',
         updated_at: '2026-01-04T00:00:05Z'
       }
@@ -130,29 +130,30 @@ describe('import flow', () => {
     await user.type(screen.getByLabelText('密码'), 'correct-password');
     await user.click(screen.getByRole('button', { name: '登录' }));
 
-    await screen.findByRole('heading', { name: '工作台' });
+    await screen.findByRole('heading', { name: '工作台概览' });
 
-    await user.click(screen.getByRole('button', { name: '文档导入' }));
+    await user.click(screen.getByRole('link', { name: '文档解析' }));
     await user.click(await screen.findByRole('button', { name: '新建导入' }));
 
     const form = screen.getByRole('form', { name: '新建导入任务' });
-    await user.selectOptions(within(form).getByLabelText('目标题库'), '20');
-    await user.upload(within(form).getByLabelText('文件'), new File(['题目内容'], 'questions.pdf', { type: 'application/pdf' }));
-    await user.clear(within(form).getByLabelText('题目数量'));
-    await user.type(within(form).getByLabelText('题目数量'), '1');
-    const submitButton = within(form).getByRole('button', { name: '开始导入' });
+    await user.selectOptions(within(form).getAllByRole('combobox')[0], '20');
+    await user.upload(within(form).getByText(/点击或拖拽上传文件/).closest('label')!, new File(['题目内容'], 'questions.pdf', { type: 'application/pdf' }));
+    const countInput = within(form).getByPlaceholderText('自动');
+    await user.clear(countInput);
+    await user.type(countInput, '1');
+    const submitButton = within(form).getByRole('button', { name: '提交智能导入' });
     expect(submitButton).toBeEnabled();
     fireEvent.submit(form);
 
     await waitFor(() =>
       expect(globalThis.fetch).toHaveBeenCalledWith('/api/import-jobs', expect.objectContaining({ method: 'POST' }))
     );
-    expect(await screen.findByText('处理中')).toBeInTheDocument();
+    expect(await screen.findByText('待审核')).toBeInTheDocument();
 
     expect(await screen.findByRole('button', { name: '审核草稿' }, { timeout: 3500 })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '审核草稿' }));
 
     expect(await screen.findByText('二分查找的前提是什么？')).toBeInTheDocument();
-    expect(screen.getByRole('cell', { name: /数组已排序/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('cell', { name: /数组已排序/ }).length).toBeGreaterThanOrEqual(1);
   }, 10000);
 });

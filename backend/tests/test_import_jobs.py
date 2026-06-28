@@ -264,10 +264,11 @@ def test_import_jobs_and_drafts_are_owner_scoped(
         },
         files={"file": ("fixture.txt", b"Bob cannot import into Alice bank.", "text/plain")},
     )
-    assert bob_create_response.status_code == 404
+    assert bob_create_response.status_code == 403
 
 
-def test_publish_requires_approved_draft(client: TestClient, monkeypatch) -> None:
+def test_publish_auto_approves_pending_drafts(client: TestClient, monkeypatch) -> None:
+    """Publishing with no approved drafts auto-approves pending drafts."""
     _mock_import_generation(monkeypatch)
     token = register_and_login(client, "alice", "alice@example.com")
     headers = _headers(token)
@@ -283,8 +284,9 @@ def test_publish_requires_approved_draft(client: TestClient, monkeypatch) -> Non
 
     publish_response = client.post(f"/api/import-jobs/{job_id}/publish", headers=headers)
 
-    assert publish_response.status_code == 400
-    assert publish_response.json()["detail"] == "No approved drafts to publish"
+    # Auto-approves pending drafts and publishes
+    assert publish_response.status_code == 200
+    assert publish_response.json()["published_count"] == 1
 
 
 def test_processing_is_idempotent_for_non_pending_jobs(client: TestClient, monkeypatch) -> None:
@@ -328,7 +330,8 @@ def test_retry_rejects_processing_job(client: TestClient, monkeypatch) -> None:
     assert retry_response.json()["detail"] == "Import job is already processing"
 
 
-def test_invalid_draft_does_not_publish_question(client: TestClient, monkeypatch) -> None:
+def test_empty_options_get_placeholder_on_publish(client: TestClient, monkeypatch) -> None:
+    """Choice questions with empty options get auto-generated placeholders and publish successfully."""
     _mock_import_generation(monkeypatch)
     token = register_and_login(client, "alice", "alice@example.com")
     headers = _headers(token)
@@ -337,7 +340,7 @@ def test_invalid_draft_does_not_publish_question(client: TestClient, monkeypatch
         "/api/import-jobs",
         headers=headers,
         data={"bank_id": str(bank_id), "question_count": "1"},
-        files={"file": ("fixture.txt", b"Invalid draft.", "text/plain")},
+        files={"file": ("fixture.txt", b"Empty options draft.", "text/plain")},
     )
     job_id = create_response.json()["id"]
     _process_job(client, job_id)
@@ -351,9 +354,13 @@ def test_invalid_draft_does_not_publish_question(client: TestClient, monkeypatch
 
     publish_response = client.post(f"/api/import-jobs/{job_id}/publish", headers=headers)
 
-    assert publish_response.status_code == 400
+    # Now publishes successfully with placeholder options
+    assert publish_response.status_code == 200
+    assert publish_response.json()["published_count"] == 1
     questions_response = client.get(f"/api/question-banks/{bank_id}/questions", headers=headers)
-    assert questions_response.json() == []
+    assert len(questions_response.json()) == 1
+    # Verify placeholder options were generated
+    assert len(questions_response.json()[0]["options"]) >= 2
 
 
 def test_multiple_choice_answer_list_is_published_canonically(client: TestClient, monkeypatch) -> None:
@@ -433,3 +440,73 @@ def test_save_upload_sanitizes_filename_and_stays_inside_storage_root(monkeypatc
     finally:
         if storage_root.exists():
             shutil.rmtree(storage_root)
+
+
+def test_import_job_accepts_auto_count_and_difficulty(client: TestClient, monkeypatch) -> None:
+    """Verify that auto (0 count, 'auto' difficulty) are accepted and stored."""
+    captured_config: list[dict] = []
+
+    from app.services import import_service, llm_client, storage
+
+    monkeypatch.setattr(import_service, "resolve_model_config", lambda db, user: _FakeModelConfig())
+    monkeypatch.setattr(
+        storage,
+        "save_upload",
+        lambda user_id, upload: (
+            upload.filename,
+            str(Path(__file__).with_name("fixtures").joinpath("import_fixture.txt")),
+        ),
+    )
+
+    def _capture_drafts(config, text, generation_config):
+        captured_config.append(generation_config)
+        return [
+            {
+                "type": "single_choice",
+                "stem": "Test question?",
+                "options": [
+                    {"label": "A", "content": "Yes", "is_correct": True, "sort_order": 1},
+                    {"label": "B", "content": "No", "is_correct": False, "sort_order": 2},
+                ],
+                "answer": {"label": "A"},
+                "explanation": "",
+                "difficulty": "easy",
+                "tags": [],
+            }
+        ]
+
+    monkeypatch.setattr(llm_client, "generate_question_drafts", _capture_drafts)
+
+    token = register_and_login(client, "alice_auto", "alice_auto@example.com")
+    headers = _headers(token)
+    bank_id = _create_bank(client, token, name="Auto Bank")
+
+    # Send with auto defaults (question_count=0, difficulty=auto)
+    create_response = client.post(
+        "/api/import-jobs",
+        headers=headers,
+        data={
+            "bank_id": str(bank_id),
+            "question_types": "single_choice",
+            "question_count": "0",
+            "difficulty": "auto",
+            "language": "zh-CN",
+            "with_explanations": "true",
+        },
+        files={"file": ("exam.txt", b"Auto mode test.", "text/plain")},
+    )
+    assert create_response.status_code == 201
+    job_id = create_response.json()["id"]
+
+    _process_job(client, job_id)
+
+    # Verify the generation_config was passed correctly
+    assert len(captured_config) == 1
+    assert captured_config[0]["question_count"] == 0
+    assert captured_config[0]["difficulty"] == "auto"
+
+    # Verify drafts were generated
+    drafts = client.get(f"/api/import-jobs/{job_id}/drafts", headers=headers).json()
+    assert len(drafts) == 1
+    assert drafts[0]["stem"] == "Test question?"
+    assert len(drafts[0]["options_json"]) == 2

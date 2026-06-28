@@ -1,14 +1,17 @@
+from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=80)
-    email: str = Field(min_length=3, max_length=255)
+    email: Optional[str] = Field(default=None, max_length=255)
     password: str = Field(min_length=8, max_length=128)
 
     @field_validator("email")
     @classmethod
-    def validate_email(cls, value: str) -> str:
+    def validate_email(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or value.strip() == "":
+            return None
         normalized = value.strip().lower()
         if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
             raise ValueError("Invalid email address")

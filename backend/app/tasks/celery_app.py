@@ -8,7 +8,9 @@ except ModuleNotFoundError:
 
 
 if Celery is not None:
-    celery_app = Celery("question_bank_imports", broker=get_settings().redis_url, backend=get_settings().redis_url)
+    settings = get_settings()
+    broker_url = getattr(settings, "redis_url", "redis://localhost:6379/0")
+    celery_app = Celery("question_bank_imports", broker=broker_url, backend=broker_url)
 else:
 
     class _FallbackCeleryApp:

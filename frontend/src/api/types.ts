@@ -1,7 +1,19 @@
+// ── Enums & Literal Unions ──────────────────────────────────────────
+
+export type QuestionType = 'single_choice' | 'multiple_choice' | 'true_false' | 'fill_blank' | 'short_answer';
+export type Difficulty = 'auto' | 'easy' | 'medium' | 'hard';
+export type Visibility = 'private' | 'public';
+export type ImportJobStatus = 'pending' | 'processing' | 'reviewing' | 'completed' | 'failed';
+export type DraftStatus = 'pending' | 'approved' | 'rejected';
+export type MasteryStatus = 'mastered' | 'unmastered';
+export type PracticeMode = 'sequential' | 'random';
+
+// ── Auth ───────────────────────────────────────────────────────────
+
 export interface User {
   id: number;
   username: string;
-  email: string;
+  email?: string;
   role: string;
   is_active: boolean;
   created_at: string;
@@ -19,16 +31,18 @@ export interface LoginPayload {
 
 export interface RegisterPayload {
   username: string;
-  email: string;
+  email?: string;
   password: string;
 }
+
+// ── Question Bank ──────────────────────────────────────────────────
 
 export interface QuestionBank {
   id: number;
   owner_id: number;
   name: string;
   description: string;
-  visibility: string;
+  visibility: Visibility;
   question_count?: number;
   created_at: string;
   updated_at: string;
@@ -39,23 +53,23 @@ export interface QuestionBankCreate {
   description?: string;
 }
 
+// ── Question ───────────────────────────────────────────────────────
+
 export interface QuestionOption {
   id?: number;
   label?: string;
   content: string;
   is_correct: boolean;
   order_index?: number;
-  sort_order?: number;
 }
 
 export interface Question {
   id: number;
   bank_id: number;
   stem: string;
-  question_type: string;
-  type?: string;
+  question_type: QuestionType;
   answer_text?: string;
-  difficulty: string;
+  difficulty: Difficulty;
   explanation?: string;
   tags?: string[];
   source?: string;
@@ -66,25 +80,25 @@ export interface Question {
 
 export interface QuestionPayload {
   stem: string;
-  question_type: string;
+  question_type: QuestionType;
   answer_text?: string;
-  difficulty: string;
+  difficulty: Difficulty;
   explanation?: string;
   tags?: string[];
   source?: string;
   options: QuestionOption[];
 }
 
-export type ImportJobStatus = 'pending' | 'processing' | 'reviewing' | 'completed' | 'failed';
+// ── Import Job ─────────────────────────────────────────────────────
 
 export interface ImportJob {
   id: number;
   bank_id: number;
   filename: string;
-  status: ImportJobStatus | string;
+  status: ImportJobStatus;
   question_count: number;
-  question_types: string[];
-  difficulty: string;
+  question_types: QuestionType[];
+  difficulty: Difficulty;
   language: string;
   with_explanations: boolean;
   error_message?: string | null;
@@ -96,8 +110,8 @@ export interface ImportJobCreate {
   bank_id: number;
   file: File;
   question_count: number;
-  question_types: string[];
-  difficulty: string;
+  question_types: QuestionType[];
+  difficulty: Difficulty;
   language: string;
   with_explanations: boolean;
 }
@@ -106,27 +120,34 @@ export interface ImportedQuestionDraft {
   id: number;
   import_job_id: number;
   stem: string;
-  question_type: string;
+  question_type: QuestionType;
   answer_json: Record<string, unknown>;
   answer_text: string;
-  difficulty: string;
+  difficulty: Difficulty;
   explanation?: string;
   options: QuestionOption[];
-  status: string;
+  status: DraftStatus;
   created_at: string;
   updated_at: string;
 }
 
 export interface ImportedQuestionDraftPayload {
   stem: string;
-  question_type: string;
+  question_type: QuestionType;
   answer_json?: Record<string, unknown>;
   answer_text?: string;
-  difficulty: string;
+  difficulty: Difficulty;
   explanation?: string;
   options: QuestionOption[];
-  status?: string;
+  status?: DraftStatus;
 }
+
+export interface ImportPublishResponse {
+  published_count: number;
+  question_ids: number[];
+}
+
+// ── Model Settings ─────────────────────────────────────────────────
 
 export interface ModelSettings {
   provider: string | null;
@@ -150,6 +171,20 @@ export interface ModelConnectionTestResponse {
   message?: string | null;
 }
 
+// ── Practice ───────────────────────────────────────────────────────
+
+export interface PracticeSessionCreate {
+  bank_id: number;
+  mode: PracticeMode;
+  question_count: number;
+}
+
+export interface PracticeAnswerPayload {
+  question_id: number;
+  user_answer: string | string[];
+  elapsed_seconds?: number;
+}
+
 export interface PracticeAnswer {
   id: number;
   session_id: number;
@@ -160,23 +195,11 @@ export interface PracticeAnswer {
   created_at: string;
 }
 
-export interface PracticeSessionCreate {
-  bank_id: number;
-  mode: string;
-  question_count: number;
-}
-
-export interface PracticeAnswerPayload {
-  question_id: number;
-  user_answer: string | string[];
-  elapsed_seconds?: number;
-}
-
 export interface PracticeSession {
   id: number;
   user_id: number;
   bank_id: number;
-  mode: string;
+  mode: PracticeMode;
   question_count: number;
   started_at: string;
   finished_at: string | null;
@@ -185,18 +208,15 @@ export interface PracticeSession {
   answers: PracticeAnswer[];
 }
 
+// ── Wrong Questions ────────────────────────────────────────────────
+
 export interface WrongQuestion {
   id: number;
   user_id: number;
   question_id: number;
   wrong_count: number;
   last_wrong_at: string | null;
-  mastery_status: string;
+  mastery_status: MasteryStatus;
   created_at: string;
   updated_at: string;
-}
-
-export interface ImportPublishResponse {
-  published_count: number;
-  question_ids: number[];
 }

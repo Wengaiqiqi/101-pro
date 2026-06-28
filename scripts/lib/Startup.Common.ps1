@@ -132,14 +132,19 @@ function Get-TrackedProcesses {
     }
 
     try {
-        $document = Get-Content -LiteralPath $PidFile -Raw | ConvertFrom-Json
+        # Explicitly read as UTF-8 to handle paths with non-ASCII characters
+        $utf8 = New-Object System.Text.UTF8Encoding($false)
+        $jsonString = [System.IO.File]::ReadAllText($PidFile, $utf8)
+        $document = $jsonString | ConvertFrom-Json
         if ($null -eq $document.processes) {
             return @()
         }
         return @($document.processes)
     }
     catch {
-        throw "Could not read runtime process file '$PidFile': $($_.Exception.Message)"
+        # If JSON is corrupted, return empty and let startup recreate
+        Write-Warning "Could not parse '$PidFile' (may be corrupted). Starting fresh."
+        return @()
     }
 }
 
@@ -159,11 +164,12 @@ function Save-TrackedProcesses {
         updated_at = (Get-Date).ToUniversalTime().ToString("o")
         processes = @($Processes)
     }
-    [System.IO.File]::WriteAllText(
-        $PidFile,
-        ($document | ConvertTo-Json -Depth 6),
-        $script:StartupEncoding
-    )
+    $jsonString = $document | ConvertTo-Json -Depth 6
+    # PowerShell 5.1 ConvertTo-Json may not produce proper UTF-8.
+    # Explicitly encode to UTF-8 bytes before writing.
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $bytes = $utf8.GetBytes($jsonString)
+    [System.IO.File]::WriteAllBytes($PidFile, $bytes)
 }
 
 function Start-TrackedProcess {
@@ -224,6 +230,71 @@ function Test-TrackedProcess {
     }
 }
 
+function Get-ChildProcessIds {
+    param([Parameter(Mandatory = $true)][int]$ParentPid)
+
+    $childPids = @()
+    try {
+        $output = & wmic process where "ParentProcessId=$ParentPid" get ProcessId 2>&1
+        foreach ($line in $output) {
+            if ($line -match '^\s*(\d+)\s*$') {
+                $childPids += [int]$Matches[1]
+            }
+        }
+    }
+    catch {
+        # wmic may fail; fall back to empty list
+    }
+    return $childPids
+}
+
+function Stop-ProcessTreeRobust {
+    param(
+        [Parameter(Mandatory = $true)][int]$Pid,
+        [int]$GraceSeconds = 3
+    )
+
+    # Recursively collect all descendant PIDs
+    $allPids = @($Pid)
+    $queue = @($Pid)
+    while ($queue.Count -gt 0) {
+        $current = $queue[0]
+        $queue = $queue[1..($queue.Count - 1)]
+        $children = Get-ChildProcessIds -ParentPid $current
+        foreach ($childPid in $children) {
+            if ($childPid -ne 0 -and $allPids -notcontains $childPid) {
+                $allPids += $childPid
+                $queue += $childPid
+            }
+        }
+    }
+
+    # Kill leaf-first (reverse order) to avoid orphaning
+    $taskkill = Get-Command "taskkill.exe" -ErrorAction SilentlyContinue
+    for ($i = $allPids.Count - 1; $i -ge 0; $i--) {
+        $targetPid = $allPids[$i]
+        $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
+        if ($null -eq $proc) { continue }
+
+        if ($null -ne $taskkill) {
+            & $taskkill.Source /PID $targetPid /F 2>$null | Out-Null
+        }
+        else {
+            Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # Wait for root process to exit
+    $deadline = (Get-Date).AddSeconds($GraceSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if ($null -eq (Get-Process -Id $Pid -ErrorAction SilentlyContinue)) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    return $false
+}
+
 function Stop-TrackedProcessTree {
     param(
         [Parameter(Mandatory = $true)][object]$Record,
@@ -234,19 +305,10 @@ function Stop-TrackedProcessTree {
         return
     }
 
-    $taskkill = Get-Command "taskkill.exe" -ErrorAction SilentlyContinue
-    if ($null -eq $taskkill) {
-        Stop-Process -Id ([int]$Record.pid) -Force -ErrorAction SilentlyContinue
-        return
-    }
-
-    & $taskkill.Source /PID ([int]$Record.pid) /T 2>$null | Out-Null
-    $deadline = (Get-Date).AddSeconds($GraceSeconds)
-    while ((Get-Date) -lt $deadline -and (Test-TrackedProcess -Record $Record)) {
-        Start-Sleep -Milliseconds 250
-    }
-    if (Test-TrackedProcess -Record $Record) {
-        & $taskkill.Source /PID ([int]$Record.pid) /T /F 2>$null | Out-Null
+    $pid = [int]$Record.pid
+    $stopped = Stop-ProcessTreeRobust -Pid $pid -GraceSeconds $GraceSeconds
+    if (-not $stopped) {
+        throw "Failed to stop process tree for PID $pid after $GraceSeconds seconds."
     }
 }
 

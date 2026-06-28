@@ -70,7 +70,7 @@ def test_question_bank_update_rejects_null_name_and_preserves_existing_data(clie
     assert persisted["description"] == "Draft"
 
 
-def test_non_owner_get_update_and_delete_question_bank_returns_404(client: TestClient) -> None:
+def test_non_owner_get_update_and_delete_question_bank_returns_403(client: TestClient) -> None:
     alice_token = register_and_login(client, "alice", "alice@example.com")
     bob_token = register_and_login(client, "bob", "bob@example.com")
 
@@ -83,6 +83,6 @@ def test_non_owner_get_update_and_delete_question_bank_returns_404(client: TestC
     bank_id = create_response.json()["id"]
     bob_headers = {"Authorization": f"Bearer {bob_token}"}
 
-    assert client.get(f"/api/question-banks/{bank_id}", headers=bob_headers).status_code == 404
-    assert client.put(f"/api/question-banks/{bank_id}", headers=bob_headers, json={"name": "Mine"}).status_code == 404
-    assert client.delete(f"/api/question-banks/{bank_id}", headers=bob_headers).status_code == 404
+    assert client.get(f"/api/question-banks/{bank_id}", headers=bob_headers).status_code == 403
+    assert client.put(f"/api/question-banks/{bank_id}", headers=bob_headers, json={"name": "Mine"}).status_code == 403
+    assert client.delete(f"/api/question-banks/{bank_id}", headers=bob_headers).status_code == 403

@@ -13,10 +13,12 @@ router = APIRouter(tags=["questions"])
 @router.get("/question-banks/{bank_id}/questions", response_model=list[QuestionResponse])
 def list_questions(
     bank_id: int,
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[QuestionResponse]:
-    return question_service.list_questions(db, current_user, bank_id)
+    return question_service.list_questions(db, current_user, bank_id, skip=skip, limit=limit)
 
 
 @router.post("/question-banks/{bank_id}/questions", response_model=QuestionResponse, status_code=status.HTTP_201_CREATED)

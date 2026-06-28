@@ -9,15 +9,17 @@ from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 
 
 def register_user(db: Session, payload: RegisterRequest) -> User:
-    existing_user = db.scalar(
-        select(User).where(or_(User.username == payload.username, User.email == payload.email))
-    )
+    conditions = [User.username == payload.username]
+    if payload.email:
+        conditions.append(User.email == payload.email)
+
+    existing_user = db.scalar(select(User).where(or_(*conditions)))
     if existing_user is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username or email already registered")
 
     user = User(
         username=payload.username,
-        email=str(payload.email),
+        email=payload.email,
         password_hash=hash_password(payload.password),
     )
     db.add(user)

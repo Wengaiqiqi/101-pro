@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, func
@@ -15,7 +15,7 @@ class PracticeSession(Base):
     bank_id: Mapped[int] = mapped_column(ForeignKey("question_banks.id", ondelete="CASCADE"), index=True)
     mode: Mapped[str] = mapped_column(String(32))
     question_count: Mapped[int] = mapped_column(Integer)
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     accuracy: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -41,7 +41,7 @@ class PracticeAnswer(Base):
     user_answer_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     is_correct: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     elapsed_seconds: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
 
     session: Mapped[PracticeSession] = relationship(back_populates="answers")
     question: Mapped["Question"] = relationship()
@@ -59,8 +59,8 @@ class WrongQuestion(Base):
     wrong_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_wrong_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     mastery_status: Mapped[str] = mapped_column(String(32), default="unmastered", server_default="unmastered")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now())
 
     user: Mapped["User"] = relationship()
     question: Mapped["Question"] = relationship()

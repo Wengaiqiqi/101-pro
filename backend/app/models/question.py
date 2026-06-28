@@ -1,9 +1,17 @@
-from datetime import datetime
+from datetime import datetime, timezone
+import enum
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+
+class QuestionType(str, enum.Enum):
+    SINGLE_CHOICE = "single_choice"
+    MULTIPLE_CHOICE = "multiple_choice"
+    FILL_BLANK = "fill_blank"
+    SHORT_ANSWER = "short_answer"
 
 
 class QuestionBank(Base):
@@ -14,8 +22,8 @@ class QuestionBank(Base):
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     visibility: Mapped[str] = mapped_column(String(32), default="private", server_default="private")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now())
 
     owner: Mapped["User"] = relationship()
     questions: Mapped[list["Question"]] = relationship(
@@ -30,15 +38,15 @@ class Question(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     bank_id: Mapped[int] = mapped_column(ForeignKey("question_banks.id", ondelete="CASCADE"), index=True)
-    type: Mapped[str] = mapped_column(String(32))
+    type: Mapped[str] = mapped_column(String(32))  # Use QuestionType enum values
     stem: Mapped[str] = mapped_column(Text)
     answer_text: Mapped[str] = mapped_column(Text)
     explanation: Mapped[str] = mapped_column(Text, default="", server_default="")
     difficulty: Mapped[str] = mapped_column(String(32), default="normal", server_default="normal")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     source: Mapped[str] = mapped_column(String(255), default="", server_default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now())
 
     bank: Mapped[QuestionBank] = relationship(back_populates="questions")
     options: Mapped[list["QuestionOption"]] = relationship(

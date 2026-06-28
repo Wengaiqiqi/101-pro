@@ -58,7 +58,7 @@ describe('practice flow', () => {
     vi.restoreAllMocks();
   });
 
-  it('creates a session, submits an answer, finishes, and shows the result', async () => {
+  it('practice mode: select answer, reveal, and see result', async () => {
     const user = userEvent.setup();
     const session: PracticeSession = {
       id: 30,
@@ -140,28 +140,30 @@ describe('practice flow', () => {
     await user.type(screen.getByLabelText('用户名'), 'alice');
     await user.type(screen.getByLabelText('密码'), 'correct-password');
     await user.click(screen.getByRole('button', { name: '登录' }));
-    await screen.findByRole('heading', { name: '工作台' });
+    await screen.findByRole('heading', { name: '工作台概览' });
 
-    await user.click(screen.getByRole('button', { name: '练习' }));
+    // Navigate to practice
+    await user.click(screen.getByRole('link', { name: '专属练习' }));
     const setup = await screen.findByRole('form', { name: '开始练习' });
-    await user.selectOptions(within(setup).getByLabelText('题库'), '10');
-    await user.clear(within(setup).getByLabelText('题目数量'));
-    await user.type(within(setup).getByLabelText('题目数量'), '1');
+
+    // Select bank and set count to 1
+    await user.selectOptions(within(setup).getAllByRole('combobox')[0], '10');
+    const countInput = within(setup).getAllByRole('spinbutton')[0];
+    await user.clear(countInput);
+    await user.type(countInput, '1');
+
+    // Start practice (default: practice mode)
     await user.click(within(setup).getByRole('button', { name: '开始练习' }));
 
-    expect(await screen.findByRole('heading', { name: question.stem })).toBeInTheDocument();
-    await user.click(screen.getByRole('radio', { name: 'B. 数组已排序' }));
-    await user.click(screen.getByRole('button', { name: '提交并查看结果' }));
+    // All questions shown on one page
+    expect(await screen.findByText(question.stem)).toBeInTheDocument();
 
-    const result = await screen.findByRole('region', { name: '练习结果' });
-    expect(within(result).getByRole('heading', { name: '练习结果' })).toBeInTheDocument();
-    expect(within(result).getByText('100%')).toBeInTheDocument();
-    expect(within(result).getByText('回答正确')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        '/api/practice-sessions/30/finish',
-        expect.objectContaining({ method: 'POST' })
-      )
-    );
+    // Select answer B (auto-reveals in practice mode)
+    await user.click(screen.getByRole('radio', { name: 'B. 数组已排序' }));
+
+    // Verify correct answer is shown immediately
+    await waitFor(() => {
+      expect(screen.getByText('正确')).toBeInTheDocument();
+    });
   });
 });

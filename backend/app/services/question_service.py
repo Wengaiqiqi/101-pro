@@ -1,29 +1,23 @@
 from collections.abc import Sequence
 
-from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.question import Question, QuestionBank, QuestionOption
 from app.models.user import User
 from app.schemas.question import QuestionCreate, QuestionOptionCreate, QuestionUpdate
 from app.schemas.question_bank import QuestionBankCreate, QuestionBankUpdate
+from app.services._common import get_owned_bank as _get_owned_bank
 
 
-def _not_found() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+def _duplicate_options() -> BadRequestError:
+    return BadRequestError("Question option labels and sort orders must be unique")
 
 
-def _duplicate_options() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Question option labels and sort orders must be unique",
-    )
-
-
-def _save_failed() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question could not be saved")
+def _save_failed() -> BadRequestError:
+    return BadRequestError("Question could not be saved")
 
 
 def _validate_unique_options(options: Sequence[QuestionOptionCreate | dict[str, object]]) -> None:
@@ -38,8 +32,26 @@ def _validate_unique_options(options: Sequence[QuestionOptionCreate | dict[str, 
         sort_orders.add(sort_order)
 
 
-def list_banks(db: Session, user: User) -> list[QuestionBank]:
-    return list(db.scalars(select(QuestionBank).where(QuestionBank.owner_id == user.id).order_by(QuestionBank.id)))
+def list_banks(db: Session, user: User, *, skip: int = 0, limit: int = 100) -> list[dict]:
+    count_subq = (
+        select(func.count())
+        .where(Question.bank_id == QuestionBank.id)
+        .correlate(QuestionBank)
+        .scalar_subquery()
+    )
+    rows = db.execute(
+        select(QuestionBank, count_subq.label("question_count"))
+        .where(QuestionBank.owner_id == user.id)
+        .order_by(QuestionBank.id)
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    result = []
+    for bank, count in rows:
+        data = {c.name: getattr(bank, c.name) for c in bank.__table__.columns}
+        data["question_count"] = count or 0
+        result.append(data)
+    return result
 
 
 def create_bank(db: Session, user: User, payload: QuestionBankCreate) -> QuestionBank:
@@ -51,10 +63,7 @@ def create_bank(db: Session, user: User, payload: QuestionBankCreate) -> Questio
 
 
 def get_owned_bank(db: Session, user: User, bank_id: int) -> QuestionBank:
-    bank = db.scalar(select(QuestionBank).where(QuestionBank.id == bank_id, QuestionBank.owner_id == user.id))
-    if bank is None:
-        raise _not_found()
-    return bank
+    return _get_owned_bank(db, bank_id, user)
 
 
 def update_bank(db: Session, user: User, bank_id: int, payload: QuestionBankUpdate) -> QuestionBank:
@@ -72,13 +81,15 @@ def delete_bank(db: Session, user: User, bank_id: int) -> None:
     db.commit()
 
 
-def list_questions(db: Session, user: User, bank_id: int) -> list[Question]:
+def list_questions(db: Session, user: User, bank_id: int, *, skip: int = 0, limit: int = 100) -> list[Question]:
     get_owned_bank(db, user, bank_id)
     statement = (
         select(Question)
         .options(selectinload(Question.options))
         .where(Question.bank_id == bank_id)
         .order_by(Question.id)
+        .offset(skip)
+        .limit(limit)
     )
     return list(db.scalars(statement))
 
@@ -144,5 +155,5 @@ def _get_owned_question(db: Session, user: User, question_id: int) -> Question:
     )
     question = db.scalar(statement)
     if question is None:
-        raise _not_found()
+        raise NotFoundError()
     return question

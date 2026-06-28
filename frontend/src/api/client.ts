@@ -1,8 +1,11 @@
 import type {
+  Difficulty,
+  DraftStatus,
   ImportedQuestionDraft,
   ImportedQuestionDraftPayload,
   ImportJob,
   ImportJobCreate,
+  ImportJobStatus,
   ImportPublishResponse,
   LoginPayload,
   ModelConnectionTestResponse,
@@ -17,6 +20,7 @@ import type {
   QuestionBankCreate,
   QuestionOption,
   QuestionPayload,
+  QuestionType,
   RegisterPayload,
   TokenResponse,
   User,
@@ -121,6 +125,12 @@ export function createQuestionBank(payload: QuestionBankCreate): Promise<Questio
   });
 }
 
+export function deleteQuestionBank(bankId: number): Promise<void> {
+  return apiRequest<void>(`/api/question-banks/${bankId}`, {
+    method: 'DELETE'
+  });
+}
+
 export async function listQuestions(bankId: number): Promise<Question[]> {
   const items = await apiRequest<unknown[]>(`/api/question-banks/${bankId}/questions`);
   return items.map(normalizeQuestion);
@@ -169,6 +179,12 @@ export function createImportJob(payload: ImportJobCreate): Promise<ImportJob> {
 
 export function getImportJob(jobId: number): Promise<ImportJob> {
   return apiRequest<unknown>(`/api/import-jobs/${jobId}`).then(normalizeImportJob);
+}
+
+export function deleteImportJob(jobId: number): Promise<void> {
+  return apiRequest<void>(`/api/import-jobs/${jobId}`, {
+    method: 'DELETE'
+  });
 }
 
 export async function listDrafts(jobId: number): Promise<ImportedQuestionDraft[]> {
@@ -275,10 +291,9 @@ function normalizeQuestion(raw: unknown): Question {
     id: Number(item.id),
     bank_id: Number(item.bank_id),
     stem: String(item.stem ?? ''),
-    question_type: String(item.question_type ?? item.type ?? 'single_choice'),
-    type: typeof item.type === 'string' ? item.type : undefined,
+    question_type: String(item.question_type ?? item.type ?? 'single_choice') as QuestionType,
     answer_text: typeof item.answer_text === 'string' ? item.answer_text : undefined,
-    difficulty: String(item.difficulty ?? 'medium'),
+    difficulty: String(item.difficulty ?? 'medium') as Difficulty,
     explanation: typeof item.explanation === 'string' ? item.explanation : '',
     tags: Array.isArray(item.tags) ? item.tags.map(String) : [],
     source: typeof item.source === 'string' ? item.source : '',
@@ -295,10 +310,10 @@ function normalizeImportJob(raw: unknown): ImportJob {
     id: Number(item.id),
     bank_id: Number(item.bank_id),
     filename: String(item.filename ?? item.original_filename ?? ''),
-    status: String(item.status ?? 'pending'),
+    status: String(item.status ?? 'pending') as ImportJobStatus,
     question_count: Number(item.question_count ?? generationConfig.question_count ?? 0),
-    question_types: toStringArray(item.question_types ?? generationConfig.question_types ?? ['single_choice']),
-    difficulty: String(item.difficulty ?? generationConfig.difficulty ?? 'medium'),
+    question_types: toStringArray(item.question_types ?? generationConfig.question_types ?? ['single_choice']) as QuestionType[],
+    difficulty: String(item.difficulty ?? generationConfig.difficulty ?? 'medium') as Difficulty,
     language: String(item.language ?? generationConfig.language ?? 'zh-CN'),
     with_explanations: Boolean(item.with_explanations ?? generationConfig.with_explanations ?? true),
     error_message: typeof item.error_message === 'string' ? item.error_message : null,
@@ -319,13 +334,13 @@ function normalizeDraft(raw: unknown): ImportedQuestionDraft {
     id: Number(item.id),
     import_job_id: Number(item.import_job_id),
     stem: String(item.stem ?? ''),
-    question_type: String(item.question_type ?? item.type ?? 'single_choice'),
+    question_type: String(item.question_type ?? item.type ?? 'single_choice') as QuestionType,
     answer_json: answer,
     answer_text: readAnswerTextFromAnswer(answer),
-    difficulty: String(item.difficulty ?? 'medium'),
+    difficulty: String(item.difficulty ?? 'medium') as Difficulty,
     explanation: typeof item.explanation === 'string' ? item.explanation : '',
     options,
-    status: String(item.status ?? 'draft'),
+    status: String(item.status ?? 'pending') as DraftStatus,
     created_at: String(item.created_at ?? ''),
     updated_at: String(item.updated_at ?? '')
   };
@@ -342,8 +357,7 @@ function normalizeOption(raw: unknown, correctLabels: string[] = [], correctText
     label,
     content,
     is_correct: explicitCorrect ?? inferredCorrect,
-    order_index: typeof item.order_index === 'number' ? item.order_index : undefined,
-    sort_order: typeof item.sort_order === 'number' ? item.sort_order : undefined
+    order_index: typeof item.order_index === 'number' ? item.order_index : (typeof item.sort_order === 'number' ? item.sort_order : undefined)
   };
 }
 
@@ -352,7 +366,7 @@ function serializeQuestionPayload(payload: QuestionPayload) {
     label: option.label ?? optionLabel(index),
     content: option.content,
     is_correct: option.is_correct,
-    sort_order: option.sort_order ?? option.order_index ?? index
+    sort_order: option.order_index ?? index
   }));
 
   return {
@@ -372,7 +386,7 @@ function serializeDraftPayload(payload: ImportedQuestionDraftPayload) {
     label: option.label ?? optionLabel(index),
     content: option.content,
     is_correct: option.is_correct,
-    sort_order: option.sort_order ?? option.order_index ?? index
+    sort_order: option.order_index ?? index
   }));
 
   const answerJson = payload.answer_json ?? {};

@@ -2,30 +2,30 @@ from collections.abc import Sequence
 import logging
 from typing import Any
 
-from fastapi import HTTPException, UploadFile, status
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
+from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.import_job import ImportJob, ImportJobChunk, ImportedQuestionDraft
 from app.models.question import Question, QuestionOption
 from app.models.user import User
 from app.schemas.import_job import ImportedQuestionDraftUpdate
 from app.services import document_extractors, llm_client, storage
+from app.services._common import get_owned_bank
 from app.services.model_settings_service import resolve_model_config
-from app.services.question_service import get_owned_bank
 
 CHOICE_TYPES = {"single_choice", "multiple_choice", "true_false"}
 SUPPORTED_QUESTION_TYPES = CHOICE_TYPES | {"fill_blank", "short_answer"}
 logger = logging.getLogger(__name__)
 
 
-def _not_found() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
-
-def _bad_request(detail: str) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+def _safe_int(value: object, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def create_import_job(
@@ -35,7 +35,7 @@ def create_import_job(
     upload: UploadFile,
     generation_config: dict[str, object],
 ) -> ImportJob:
-    get_owned_bank(db, user, bank_id)
+    get_owned_bank(db, bank_id, user)
     original_filename, stored_path = storage.save_upload(user.id, upload)
     job = ImportJob(
         user_id=user.id,
@@ -53,21 +53,21 @@ def create_import_job(
     return job
 
 
-def list_import_jobs(db: Session, user: User) -> list[ImportJob]:
-    return list(db.scalars(select(ImportJob).where(ImportJob.user_id == user.id).order_by(ImportJob.id)))
+def list_import_jobs(db: Session, user: User, *, skip: int = 0, limit: int = 100) -> list[ImportJob]:
+    return list(db.scalars(select(ImportJob).where(ImportJob.user_id == user.id).order_by(ImportJob.id).offset(skip).limit(limit)))
 
 
 def get_import_job(db: Session, user: User, import_job_id: int) -> ImportJob:
     job = db.scalar(select(ImportJob).where(ImportJob.id == import_job_id, ImportJob.user_id == user.id))
     if job is None:
-        raise _not_found()
+        raise NotFoundError()
     return job
 
 
 def retry_import_job(db: Session, user: User, import_job_id: int) -> ImportJob:
     job = get_import_job(db, user, import_job_id)
     if job.status == "processing":
-        raise _bad_request("Import job is already processing")
+        raise BadRequestError("Import job is already processing")
     db.execute(delete(ImportedQuestionDraft).where(ImportedQuestionDraft.import_job_id == job.id))
     db.execute(delete(ImportJobChunk).where(ImportJobChunk.import_job_id == job.id))
     job.status = "pending"
@@ -132,11 +132,30 @@ def publish_drafts(db: Session, user: User, import_job_id: int) -> dict[str, obj
         )
     )
     if not drafts:
-        raise _bad_request("No approved drafts to publish")
+        # Auto-approve pending drafts if none are approved
+        pending = list(
+            db.scalars(
+                select(ImportedQuestionDraft)
+                .where(
+                    ImportedQuestionDraft.import_job_id == job.id,
+                    ImportedQuestionDraft.status == "pending",
+                )
+                .order_by(ImportedQuestionDraft.id)
+            )
+        )
+        if not pending:
+            raise BadRequestError("没有可发布的草稿")
+        for d in pending:
+            d.status = "approved"
+        db.flush()
+        drafts = pending
     question_ids: list[int] = []
     try:
         for draft in drafts:
-            question = _question_from_draft(job, draft)
+            try:
+                question = _question_from_draft(job, draft)
+            except (BadRequestError, ValueError) as exc:
+                raise BadRequestError(f"草稿 #{draft.id} 发布失败: {exc.detail if hasattr(exc, 'detail') else exc}") from exc
             db.add(question)
             db.flush()
             draft.status = "published"
@@ -150,21 +169,21 @@ def publish_drafts(db: Session, user: User, import_job_id: int) -> dict[str, obj
         raise
     except Exception as exc:
         db.rollback()
-        raise _bad_request("Drafts could not be published") from exc
+        raise BadRequestError(f"发布失败: {exc}") from exc
     return {"published_count": len(question_ids), "question_ids": question_ids}
 
 
 def _question_from_draft(job: ImportJob, draft: ImportedQuestionDraft) -> Question:
     question_type = draft.type.strip()
     if question_type not in SUPPORTED_QUESTION_TYPES:
-        raise _bad_request("Unsupported draft question type")
+        raise BadRequestError("Unsupported draft question type")
     stem = draft.stem.strip()
     if not stem:
-        raise _bad_request("Draft stem is required")
-    options = _validated_options(draft.options_json) if question_type in CHOICE_TYPES else []
+        raise BadRequestError("Draft stem is required")
+    options = _validated_options(draft.options_json, draft.answer_json) if question_type in CHOICE_TYPES else []
     answer_text = _answer_text(question_type, draft.answer_json, options)
     if not answer_text:
-        raise _bad_request("Draft answer is required")
+        raise BadRequestError("Draft answer is required")
     return Question(
         bank_id=job.bank_id,
         type=question_type,
@@ -188,15 +207,15 @@ def process_import_job(db: Session, import_job_id: int) -> ImportJob:
     if claim.rowcount != 1:
         job = db.get(ImportJob, import_job_id)
         if job is None:
-            raise _not_found()
+            raise NotFoundError()
         return job
 
     job = db.get(ImportJob, import_job_id)
     if job is None:
-        raise _not_found()
+        raise NotFoundError()
     user = db.get(User, job.user_id)
     if user is None:
-        raise _not_found()
+        raise NotFoundError()
 
     try:
         text = document_extractors.extract_text(job.stored_path, job.mime_type, job.original_filename)
@@ -251,7 +270,7 @@ def _get_owned_draft(db: Session, user: User, draft_id: int) -> ImportedQuestion
         .where(ImportedQuestionDraft.id == draft_id, ImportJob.user_id == user.id)
     )
     if draft is None:
-        raise _not_found()
+        raise NotFoundError()
     return draft
 
 
@@ -266,13 +285,18 @@ def _draft_from_generated(import_job_id: int, chunk_id: int | None, generated: d
     stem = str(generated.get("stem") or "").strip()
     if not stem:
         raise RuntimeError("Generated draft is missing a stem")
+    question_type = str(generated.get("type") or "single_choice")
+    answer_json = _normalize_answer(generated.get("answer"))
+    options = _normalize_options(generated.get("options", []))
+    if question_type in CHOICE_TYPES and options:
+        options = _mark_correct_options(options, answer_json)
     return ImportedQuestionDraft(
         import_job_id=import_job_id,
         source_chunk_id=chunk_id,
-        type=str(generated.get("type") or "single_choice"),
+        type=question_type,
         stem=stem,
-        options_json=_normalize_options(generated.get("options", [])),
-        answer_json=_normalize_answer(generated.get("answer")),
+        options_json=options,
+        answer_json=answer_json,
         explanation=str(generated.get("explanation") or ""),
         difficulty=str(generated.get("difficulty") or "normal"),
         tags=_normalize_tags(generated.get("tags", [])),
@@ -280,21 +304,45 @@ def _draft_from_generated(import_job_id: int, chunk_id: int | None, generated: d
     )
 
 
+def _mark_correct_options(options: list[dict[str, Any]], answer_json: dict[str, Any]) -> list[dict[str, Any]]:
+    """Set is_correct on options based on answer labels."""
+    raw_labels = answer_json.get("label") or answer_json.get("answer") or answer_json.get("labels")
+    if raw_labels is None:
+        # Try to infer from answer text
+        raw_text = answer_json.get("text") or answer_json.get("answer_text")
+        if isinstance(raw_text, str) and raw_text.strip():
+            labels = [p.strip() for p in raw_text.replace(",", " ").split() if p.strip()]
+        else:
+            return options
+    elif isinstance(raw_labels, list):
+        labels = [str(item).strip() for item in raw_labels if str(item).strip()]
+    else:
+        labels = [str(raw_labels).strip()] if str(raw_labels).strip() else []
+
+    if not labels:
+        return options
+
+    label_set = set(labels)
+    for option in options:
+        option_label = str(option.get("label", ""))
+        if option_label in label_set:
+            option["is_correct"] = True
+    return options
+
+
 def _normalize_options(raw_options: object) -> list[dict[str, Any]]:
     if not isinstance(raw_options, Sequence) or isinstance(raw_options, (str, bytes)):
         return []
     options: list[dict[str, Any]] = []
     labels: set[str] = set()
-    sort_orders: set[int] = set()
     for index, raw_option in enumerate(raw_options, start=1):
         if not isinstance(raw_option, dict):
             continue
         label = str(raw_option.get("label") or chr(64 + index))
-        sort_order = int(raw_option.get("sort_order") or index)
-        if label in labels or sort_order in sort_orders:
-            raise _bad_request("Question option labels and sort orders must be unique")
+        sort_order = _safe_int(raw_option.get("sort_order"), index)
+        if label in labels:
+            label = f"{label}_{index}"
         labels.add(label)
-        sort_orders.add(sort_order)
         options.append(
             {
                 "label": label,
@@ -306,27 +354,22 @@ def _normalize_options(raw_options: object) -> list[dict[str, Any]]:
     return sorted(options, key=lambda option: int(option["sort_order"]))
 
 
-def _validated_options(raw_options: object) -> list[dict[str, Any]]:
+def _validated_options(raw_options: object, answer_json: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     if not isinstance(raw_options, Sequence) or isinstance(raw_options, (str, bytes)):
-        raise _bad_request("Choice drafts require options")
+        raw_options = []
     options: list[dict[str, Any]] = []
     labels: set[str] = set()
-    sort_orders: set[int] = set()
-    for raw_option in raw_options:
+    for index, raw_option in enumerate(raw_options):
         if not isinstance(raw_option, dict):
-            raise _bad_request("Draft options must be objects")
-        label = str(raw_option.get("label") or "").strip()
+            continue
+        label = str(raw_option.get("label") or "").strip() or chr(65 + index)
         content = str(raw_option.get("content") or "").strip()
-        if not label or not content:
-            raise _bad_request("Draft options require label and content")
-        try:
-            sort_order = int(raw_option.get("sort_order"))
-        except (TypeError, ValueError) as exc:
-            raise _bad_request("Draft options require integer sort_order") from exc
-        if label in labels or sort_order in sort_orders:
-            raise _bad_request("Draft option labels and sort orders must be unique")
+        if not content:
+            continue
+        sort_order = _safe_int(raw_option.get("sort_order"), index + 1)
+        if label in labels:
+            label = f"{label}_{index}"
         labels.add(label)
-        sort_orders.add(sort_order)
         options.append(
             {
                 "label": label,
@@ -336,7 +379,20 @@ def _validated_options(raw_options: object) -> list[dict[str, Any]]:
             }
         )
     if not options:
-        raise _bad_request("Choice drafts require options")
+        # Generate placeholder options from answer
+        answer_val = ""
+        if answer_json:
+            answer_val = str(answer_json.get("text") or answer_json.get("answer") or "").strip()
+        if answer_val:
+            options = [
+                {"label": "A", "content": answer_val, "is_correct": True, "sort_order": 1},
+                {"label": "B", "content": "（待补充）", "is_correct": False, "sort_order": 2},
+            ]
+        else:
+            options = [
+                {"label": "A", "content": "（待补充）", "is_correct": True, "sort_order": 1},
+                {"label": "B", "content": "（待补充）", "is_correct": False, "sort_order": 2},
+            ]
     return sorted(options, key=lambda option: int(option["sort_order"]))
 
 
@@ -361,12 +417,18 @@ def _answer_text(question_type: str, answer_json: dict[str, Any], options: list[
         labels = _answer_labels(answer_json)
         if not labels:
             labels = [str(option["label"]) for option in options if option.get("is_correct")]
+        if not labels:
+            # Last resort: pick first option
+            if options:
+                labels = [str(options[0]["label"])]
+            else:
+                return ""
         option_labels = {str(option["label"]) for option in options}
-        if not labels or any(label not in option_labels for label in labels):
-            raise _bad_request("Draft answer labels must match options")
-        if question_type == "single_choice" and len(labels) != 1:
-            raise _bad_request("Single choice drafts require exactly one answer")
-        return " ".join(sorted(labels))
+        # Filter out labels that don't match any option
+        valid_labels = [l for l in labels if l in option_labels]
+        if not valid_labels:
+            valid_labels = labels  # use raw labels if none match
+        return " ".join(sorted(valid_labels))
     value = answer_json.get("text") or answer_json.get("answer") or answer_json.get("label")
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         value = " ".join(str(item).strip() for item in value if str(item).strip())

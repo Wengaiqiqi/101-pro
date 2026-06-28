@@ -5,27 +5,31 @@
 ## Stack
 
 - Frontend: React, TypeScript, Vite, Vitest
-- Backend: FastAPI, SQLAlchemy, Alembic, PostgreSQL
-- Background jobs: Celery and Redis
+- Backend: FastAPI, SQLAlchemy, Alembic, SQLite or PostgreSQL
+- Background jobs: local import worker or Celery and Redis
 - Document extraction: pypdf and python-docx
 
 ## Prerequisites
 
 - Python 3.11+
 - Node.js 20+
-- Docker Desktop with Docker Compose
+
+Docker Desktop with Docker Compose is optional and is needed only for PostgreSQL, Redis, and Celery mode.
 
 ## One-Click Start on Windows
 
-Make sure Docker Desktop is running, then double-click `start.cmd` in the repository root. The launcher will:
+Double-click `start.cmd` in the repository root. Default startup does not require Docker. The launcher will:
 
-- verify Python, Node.js, npm, Docker, and Docker Compose;
+- verify Python, Node.js, and npm;
 - create `backend/.env` from `.env.example` only when it does not already exist;
 - install or refresh backend and frontend dependencies when their manifests change;
-- start PostgreSQL and Redis, apply database migrations, and launch FastAPI, Celery, and Vite;
+- initialize the persistent `.run/101-pro.db` SQLite database;
+- launch FastAPI, the asynchronous local document-import worker, and Vite;
 - wait for the health checks and open `http://127.0.0.1:5173`.
 
-Double-click `stop.cmd` to stop the application processes and the local PostgreSQL and Redis containers. Runtime PID state and logs are stored under `.run/`, which is ignored by Git.
+Double-click `stop.cmd` to stop the application processes. The SQLite database and uploaded files are preserved. Runtime PID state and logs are stored under `.run/`, which is ignored by Git.
+
+Double-click `restart.cmd` to stop and restart the application in one step.
 
 Advanced PowerShell options:
 
@@ -36,15 +40,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -SkipInsta
 # Clear old logs before startup.
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -ResetLogs
 
+# Use PostgreSQL, Redis, and Celery through Docker instead of local SQLite.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1 -UseDocker
+
 # Stop application processes but leave PostgreSQL and Redis running.
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1 -KeepInfrastructure
+
+# Force stop (shorter timeout, useful for stubborn processes).
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1 -Force
+
+# Restart with all options.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart.ps1 -NoBrowser -Force
 ```
 
 If startup fails, inspect `.run/logs/`. The script stops only the processes and containers it started during that attempt.
 
-## Local Setup
+SQLite and PostgreSQL contain separate data. Switching modes does not copy accounts, question banks, or import jobs between them.
 
-The following manual workflow remains available for development and debugging.
+## Optional Docker Setup
+
+The following PostgreSQL and Redis workflow remains available for development and compatibility testing.
 
 Start PostgreSQL and Redis from the repository root:
 

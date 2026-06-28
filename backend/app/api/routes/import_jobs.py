@@ -19,8 +19,8 @@ router = APIRouter(tags=["import-jobs"])
 def create_import_job(
     bank_id: int = Form(...),
     question_types: str = Form("single_choice"),
-    question_count: int = Form(5),
-    difficulty: str = Form("normal"),
+    question_count: int = Form(0),
+    difficulty: str = Form("auto"),
     language: str = Form("zh-CN"),
     with_explanations: bool = Form(True),
     file: UploadFile = File(...),
@@ -41,10 +41,12 @@ def create_import_job(
 
 @router.get("/import-jobs", response_model=list[ImportJobResponse])
 def list_import_jobs(
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ImportJobResponse]:
-    return import_service.list_import_jobs(db, current_user)
+    return import_service.list_import_jobs(db, current_user, skip=skip, limit=limit)
 
 
 @router.get("/import-jobs/{import_job_id}", response_model=ImportJobResponse)

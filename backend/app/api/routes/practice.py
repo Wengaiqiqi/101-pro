@@ -59,10 +59,12 @@ def finish_practice_session(
 
 @router.get("/wrong-questions", response_model=list[WrongQuestionResponse])
 def list_wrong_questions(
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[WrongQuestionResponse]:
-    return practice_service.list_wrong_questions(db, current_user)
+    return practice_service.list_wrong_questions(db, current_user, skip=skip, limit=limit)
 
 
 @router.post("/wrong-questions/{wrong_question_id}/mastered", response_model=WrongQuestionResponse)

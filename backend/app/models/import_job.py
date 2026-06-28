@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
@@ -20,8 +20,8 @@ class ImportJob(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     generation_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now())
 
     user: Mapped["User"] = relationship()
     bank: Mapped["QuestionBank"] = relationship()
@@ -50,8 +50,8 @@ class ImportJobChunk(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending")
     raw_model_output: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now())
 
     import_job: Mapped[ImportJob] = relationship(back_populates="chunks")
     drafts: Mapped[list["ImportedQuestionDraft"]] = relationship(back_populates="source_chunk", passive_deletes=True)
@@ -71,8 +71,8 @@ class ImportedQuestionDraft(Base):
     difficulty: Mapped[str] = mapped_column(String(32), default="normal", server_default="normal")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now())
 
     import_job: Mapped[ImportJob] = relationship(back_populates="drafts")
     source_chunk: Mapped[ImportJobChunk | None] = relationship(back_populates="drafts")

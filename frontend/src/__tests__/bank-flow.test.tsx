@@ -95,16 +95,18 @@ describe('bank flow', () => {
     await user.type(screen.getByLabelText('密码'), 'correct-password');
     await user.click(screen.getByRole('button', { name: '登录' }));
 
-    await screen.findByRole('heading', { name: '工作台' });
+    await screen.findByRole('heading', { name: '工作台概览' });
 
-    await user.click(screen.getByRole('button', { name: '题库' }));
+    await user.click(screen.getByRole('link', { name: '题库管理' }));
     expect(await screen.findByText('算法基础')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '新建题库' }));
     const form = screen.getByRole('form', { name: '新建题库' });
-    await user.type(within(form).getByLabelText('名称'), '高频错题');
-    await user.type(within(form).getByLabelText('描述'), '每周复盘题');
-    await user.click(within(form).getByRole('button', { name: '创建题库' }));
+    const nameInput = within(form).getAllByRole('textbox')[0];
+    await user.type(nameInput, '高频错题');
+    const descInput = within(form).getAllByRole('textbox')[1];
+    await user.type(descInput, '每周复盘题');
+    await user.click(within(form).getByRole('button', { name: '确认创建' }));
 
     await waitFor(() => expect(screen.getByText('高频错题')).toBeInTheDocument());
     expect(globalThis.fetch).toHaveBeenCalledWith(

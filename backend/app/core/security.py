@@ -16,13 +16,11 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only in minimal loca
         pass
 
 try:
-    from passlib.context import CryptContext
+    import bcrypt as _bcrypt
 except ModuleNotFoundError:  # pragma: no cover - exercised only in minimal local envs
-    CryptContext = None
+    _bcrypt = None
 
 from app.core.config import get_settings
-
-password_context = CryptContext(schemes=["bcrypt"], deprecated="auto") if CryptContext else None
 
 
 def _allow_crypto_fallback() -> bool:
@@ -49,18 +47,21 @@ def _sign(data: str, secret: str) -> str:
 
 
 def hash_password(password: str) -> str:
-    if password_context is not None:
-        return password_context.hash(password)
-    _require_crypto_fallback_allowed("passlib")
+    if _bcrypt is not None:
+        return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+    _require_crypto_fallback_allowed("bcrypt")
     salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("ascii"), 200_000)
     return f"pbkdf2_sha256${salt}${_b64encode(digest)}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    if password_context is not None:
-        return password_context.verify(password, password_hash)
-    _require_crypto_fallback_allowed("passlib")
+    if _bcrypt is not None:
+        try:
+            return _bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+        except Exception:
+            return False
+    _require_crypto_fallback_allowed("bcrypt")
     try:
         algorithm, salt, expected = password_hash.split("$", 2)
     except ValueError:

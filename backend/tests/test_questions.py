@@ -113,14 +113,14 @@ def test_non_owner_cannot_access_or_modify_questions(client: TestClient) -> None
     assert create_response.status_code == 201
     question_id = create_response.json()["id"]
 
-    assert client.get(f"/api/question-banks/{bank_id}/questions", headers=bob_headers).status_code == 404
+    assert client.get(f"/api/question-banks/{bank_id}/questions", headers=bob_headers).status_code == 403
     assert (
         client.post(
             f"/api/question-banks/{bank_id}/questions",
             headers=bob_headers,
             json=_single_choice_payload("Bob tries to add one"),
         ).status_code
-        == 404
+        == 403
     )
     assert client.put(f"/api/questions/{question_id}", headers=bob_headers, json={"stem": "Not yours"}).status_code == 404
     assert client.delete(f"/api/questions/{question_id}", headers=bob_headers).status_code == 404

@@ -29,6 +29,6 @@ def update_settings(
 
 
 @router.post("/test", response_model=ModelConnectionTestResponse, response_model_exclude_none=True)
-def test_settings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, object]:
+def test_settings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ModelConnectionTestResponse:
     config = model_settings_service.resolve_model_config(db, current_user)
     return model_settings_service.test_model_connection(config)
