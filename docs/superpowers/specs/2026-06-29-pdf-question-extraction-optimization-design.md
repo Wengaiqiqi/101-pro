@@ -96,11 +96,11 @@ For `期中考试试题.pdf`, the acceptance oracle is:
 | Section | Expected content |
 | --- | --- |
 | Single choice | 16 questions, each with A-D options |
-| Fill blank | 12 numbered blanks |
+| Fill blank | 11 numbered questions containing 12 answer blanks |
 | True/false | 8 questions |
 | Calculation | 2 questions, including their subparts |
 
-The expected total is 38 top-level questions. Formula-bearing landmarks from the fixture will be asserted in the integration test so a run cannot pass merely by returning the correct count with blank mathematics.
+The expected total is 37 top-level questions. Section headings may declare answer blanks rather than numbered questions, so validation tracks both values separately. Formula-bearing landmarks from the fixture will be asserted in the integration test so a run cannot pass merely by returning the correct count with blank mathematics.
 
 When validation identifies an incomplete logical page, only that page is retried with the concrete validation failures included in the repair prompt. If it remains incomplete after the configured retry limit, the import job fails with a page-specific diagnostic rather than publishing partial drafts as though extraction succeeded.
 
@@ -132,7 +132,7 @@ Implementation follows test-driven development.
 3. Prompt and request tests proving image and text inputs are both sent to the vision model.
 4. Concurrency tests using delayed fake responses to prove page requests overlap and persistence order remains stable.
 5. Validation tests for missing numbers, missing A-D options, duplicate questions, blank formula positions, and page-specific retries.
-6. Regression tests using `期中考试试题.pdf` for four logical pages and the 16/12/8/2 section oracle.
+6. Regression tests using `期中考试试题.pdf` for four logical pages and the 16 questions / 11 questions with 12 blanks / 8 questions / 2 questions section oracle.
 7. Existing backend tests to confirm non-PDF imports and publishing behavior do not regress.
 8. A live provider smoke run against the fixture, reporting elapsed time and completeness results. This live run is diagnostic and is not part of the deterministic default test suite.
 
@@ -142,4 +142,3 @@ Implementation follows test-driven development.
 - Building a general-purpose OCR service for arbitrary handwritten scans.
 - Redesigning the draft review interface.
 - Refactoring unrelated import, authentication, or practice functionality.
-
