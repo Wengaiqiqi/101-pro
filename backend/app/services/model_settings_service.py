@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.models.global_settings import GlobalSettings
 from app.models.user import User, UserModelSettings
 from app.schemas.model_settings import ModelSettingsResponse, ModelSettingsUpdate
 from app.services.llm_client import LLMConfig
@@ -36,10 +37,29 @@ def decrypt_api_key(encrypted_api_key: str) -> str:
     return _fernet().decrypt(encrypted_api_key.encode("utf-8")).decode("utf-8")
 
 
+def _get_global_setting(db: Session, key: str) -> str:
+    row = db.scalar(select(GlobalSettings).where(GlobalSettings.key == key))
+    return row.value if row else ""
+
+
 def get_model_settings(db: Session, user: User) -> ModelSettingsResponse:
     user_settings = db.scalar(select(UserModelSettings).where(UserModelSettings.user_id == user.id))
     platform_available = bool(get_settings().model_api_key)
     if user_settings is None:
+        # Fall back to global admin settings, then platform env
+        global_provider = _get_global_setting(db, "model_provider")
+        global_base_url = _get_global_setting(db, "model_base_url")
+        global_model = _get_global_setting(db, "model_name")
+        global_has_key = bool(_get_global_setting(db, "model_api_key"))
+        if global_has_key:
+            return ModelSettingsResponse(
+                provider=global_provider,
+                base_url=global_base_url,
+                model=global_model,
+                has_api_key=False,
+                platform_available=True,
+                using_global=True,
+            )
         settings = get_settings()
         return ModelSettingsResponse(
             provider=settings.model_provider,
@@ -64,16 +84,16 @@ def save_model_settings(db: Session, user: User, payload: ModelSettingsUpdate) -
         if payload.api_key is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="API key is required when creating model settings",
+                detail="首次配置需要提供 API Key",
             )
         user_settings = UserModelSettings(user_id=user.id)
         db.add(user_settings)
 
-    user_settings.provider = payload.provider
-    user_settings.base_url = payload.base_url
-    user_settings.model = payload.model
+    user_settings.provider = payload.provider.strip()
+    user_settings.base_url = payload.base_url.strip().rstrip("/")
+    user_settings.model = payload.model.strip()
     if payload.api_key is not None:
-        user_settings.encrypted_api_key = encrypt_api_key(payload.api_key)
+        user_settings.encrypted_api_key = encrypt_api_key(payload.api_key.strip())
 
     try:
         db.commit()
@@ -82,11 +102,11 @@ def save_model_settings(db: Session, user: User, payload: ModelSettingsUpdate) -
         user_settings = db.scalar(select(UserModelSettings).where(UserModelSettings.user_id == user.id))
         if user_settings is None:
             raise
-        user_settings.provider = payload.provider
-        user_settings.base_url = payload.base_url
-        user_settings.model = payload.model
+        user_settings.provider = payload.provider.strip()
+        user_settings.base_url = payload.base_url.strip().rstrip("/")
+        user_settings.model = payload.model.strip()
         if payload.api_key is not None:
-            user_settings.encrypted_api_key = encrypt_api_key(payload.api_key)
+            user_settings.encrypted_api_key = encrypt_api_key(payload.api_key.strip())
         db.commit()
     db.refresh(user_settings)
     return get_model_settings(db, user)
@@ -102,6 +122,20 @@ def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
             api_key=decrypt_api_key(user_settings.encrypted_api_key),
         )
 
+    # Fall back to global admin settings
+    global_api_key = _get_global_setting(db, "model_api_key")
+    if global_api_key:
+        try:
+            decrypted = decrypt_api_key(global_api_key)
+        except Exception:
+            decrypted = global_api_key
+        return ResolvedModelConfig(
+            provider=_get_global_setting(db, "model_provider"),
+            base_url=_get_global_setting(db, "model_base_url"),
+            model=_get_global_setting(db, "model_name"),
+            api_key=decrypted,
+        )
+
     settings = get_settings()
     if settings.model_api_key:
         return ResolvedModelConfig(
@@ -113,7 +147,7 @@ def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="No model API key configured for user or platform",
+        detail="未配置模型 API Key，请先在引擎设置中配置",
     )
 
 
@@ -144,7 +178,7 @@ def test_model_connection(config: ResolvedModelConfig) -> dict[str, object]:
             json={
                 "model": llm_config.model,
                 "messages": [{"role": "user", "content": "Reply with ok."}],
-                "max_tokens": 4,
+                "max_tokens": 16,
             },
             timeout=15,
         )

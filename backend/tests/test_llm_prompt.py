@@ -19,11 +19,11 @@ class TestBuildPrompt:
         }
         prompt = _build_prompt("sample text", config)
 
-        assert "Generate as many questions as the source text supports" in prompt
-        assert "Choose appropriate difficulty based on the content" in prompt
+        assert "尽可能多地提取所有题目" in prompt
+        assert "根据内容选择合适难度" in prompt
         assert "single_choice" in prompt
         assert "short_answer" in prompt
-        assert "Include a clear explanation" in prompt
+        assert "每题需包含解析" in prompt
 
     def test_prompt_with_specific_count_and_difficulty(self) -> None:
         config: dict[str, object] = {
@@ -35,9 +35,9 @@ class TestBuildPrompt:
         }
         prompt = _build_prompt("sample text", config)
 
-        assert "Generate exactly 10 questions" in prompt
-        assert "Difficulty level: hard" in prompt
-        assert "Explanations can be empty strings" in prompt
+        assert "生成恰好 10 道题" in prompt
+        assert "难度：hard" in prompt
+        assert "explanation 字段留空字符串" in prompt
 
     def test_prompt_includes_options_format_instructions(self) -> None:
         config: dict[str, object] = {
@@ -50,8 +50,8 @@ class TestBuildPrompt:
         assert "options" in prompt
         assert "label" in prompt
         assert "is_correct" in prompt
-        assert "A/B/C/" in prompt
-        assert "extract them directly" in prompt
+        assert "选择题/判断题必填" in prompt
+        assert "sort_order" in prompt
 
     def test_prompt_includes_answer_format_for_choice(self) -> None:
         config: dict[str, object] = {
@@ -88,7 +88,7 @@ class TestBuildPrompt:
 
         assert "fill_blank" in prompt
         assert "short_answer" in prompt
-        assert "empty" in prompt.lower()
+        assert "非选择题" in prompt
 
 
 class TestPDFTextExtraction:

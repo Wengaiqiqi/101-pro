@@ -56,21 +56,25 @@ def _create_question(
     return int(response.json()["id"])
 
 
+def _correct(question, answer) -> bool:
+    return is_answer_correct(question, answer)[0]
+
+
 def test_normalize_answer_and_scoring() -> None:
     assert normalize_answer("  B ") == ["b"]
     assert normalize_answer([" B ", "a", " "]) == ["a", "b"]
     assert normalize_answer("A|B") == ["a|b"]
-    assert is_answer_correct(_Question("single_choice", "B"), " b ") is True
-    assert is_answer_correct(_Question("single_choice", "B"), "A") is False
+    assert _correct(_Question("single_choice", "B"), " b ") is True
+    assert _correct(_Question("single_choice", "B"), "A") is False
 
-    assert is_answer_correct(_Question("multiple_choice", "A|C"), ["c", " a "]) is True
-    assert is_answer_correct(_Question("multiple_choice", "A C"), ["c", " a "]) is True
-    assert is_answer_correct(_Question("multiple_choice", "A,C"), "C|A") is True
-    assert is_answer_correct(_Question("multiple_choice", "A|C"), "A") is False
+    assert _correct(_Question("multiple_choice", "A|C"), ["c", " a "]) is True
+    assert _correct(_Question("multiple_choice", "A C"), ["c", " a "]) is True
+    assert _correct(_Question("multiple_choice", "A,C"), "C|A") is True
+    assert _correct(_Question("multiple_choice", "A|C"), "A") is False
 
-    assert is_answer_correct(_Question("fill_blank", "New York|NYC"), "  new   york ") is True
-    assert is_answer_correct(_Question("short_answer", "New York|NYC"), "nyc") is True
-    assert is_answer_correct(_Question("fill_blank", "New York|NYC"), "Boston") is False
+    assert _correct(_Question("fill_blank", "New York|NYC"), "  new   york ") is True
+    assert _correct(_Question("short_answer", "New York|NYC"), "nyc") is True
+    assert _correct(_Question("fill_blank", "New York|NYC"), "Boston") is False
 
 
 def test_practice_session_api_flow_and_owner_scope(client: TestClient) -> None:

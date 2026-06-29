@@ -1,9 +1,12 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../App';
+import { updateDraft } from '../api/client';
 import type { ImportedQuestionDraft, ImportJob, QuestionBank, User } from '../api/types';
+import { DraftReviewPage } from '../features/imports/DraftReviewPage';
 
 const currentUser: User = {
   id: 1,
@@ -39,6 +42,7 @@ describe('import flow', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -156,4 +160,97 @@ describe('import flow', () => {
     expect(await screen.findByText('二分查找的前提是什么？')).toBeInTheDocument();
     expect(screen.getAllByRole('cell', { name: /数组已排序/ }).length).toBeGreaterThanOrEqual(1);
   }, 10000);
+
+  it.each([
+    ['short_answer', '答案（可选）', false],
+    ['fill_blank', '答案', true],
+  ] as const)(
+    'sets the answer requirement for %s drafts',
+    async (questionType, answerLabel, required) => {
+      const user = userEvent.setup();
+      const job: ImportJob = {
+        id: 51,
+        bank_id: 20,
+        filename: 'exam.pdf',
+        status: 'reviewing',
+        question_count: 1,
+        question_types: [questionType],
+        difficulty: 'medium',
+        language: 'zh-CN',
+        with_explanations: false,
+        created_at: '2026-01-04T00:00:00Z',
+        updated_at: '2026-01-04T00:00:05Z',
+      };
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        jsonResponse([
+          {
+            id: 61,
+            import_job_id: 51,
+            type: questionType,
+            stem: '说明系统稳定的含义',
+            options_json: [],
+            answer_json: { text: '' },
+            explanation: '',
+            difficulty: 'medium',
+            tags: [],
+            status: 'pending',
+            created_at: '2026-01-04T00:00:05Z',
+            updated_at: '2026-01-04T00:00:05Z',
+          },
+        ]),
+      );
+
+      render(
+        <MemoryRouter>
+          <DraftReviewPage job={job} onPublished={vi.fn()} />
+        </MemoryRouter>,
+      );
+
+      await screen.findByText('说明系统稳定的含义');
+      await user.click(screen.getByRole('button', { name: '编辑' }));
+      const answer = screen.getByRole('textbox', { name: answerLabel });
+
+      if (required) {
+        expect(answer).toBeRequired();
+      } else {
+        expect(answer).not.toBeRequired();
+      }
+    },
+  );
+
+  it('preserves true/false options and the selected answer when saving a draft', async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return jsonResponse({
+        id: 77,
+        import_job_id: 51,
+        ...requestBody,
+        created_at: '2026-01-04T00:00:05Z',
+        updated_at: '2026-01-04T00:00:05Z',
+      });
+    });
+
+    await updateDraft(77, {
+      stem: '地球是太阳系中的行星。',
+      question_type: 'true_false',
+      answer_json: {},
+      difficulty: 'easy',
+      options: [
+        { label: 'A', content: '正确', is_correct: true },
+        { label: 'B', content: '错误', is_correct: false },
+      ],
+      status: 'pending',
+    });
+
+    expect(requestBody).toMatchObject({
+      type: 'true_false',
+      options_json: [
+        { label: 'A', content: '正确', is_correct: true },
+        { label: 'B', content: '错误', is_correct: false },
+      ],
+      answer_json: { label: ['A'], text: 'A' },
+    });
+  });
 });

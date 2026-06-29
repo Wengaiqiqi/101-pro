@@ -31,7 +31,6 @@ export interface LoginPayload {
 
 export interface RegisterPayload {
   username: string;
-  email?: string;
   password: string;
 }
 
@@ -147,6 +146,22 @@ export interface ImportPublishResponse {
   question_ids: number[];
 }
 
+// ── Admin ────────────────────────────────────────────────────────
+
+export interface GlobalSettings {
+  model_provider: string;
+  model_base_url: string;
+  model_name: string;
+  has_api_key: boolean;
+}
+
+export interface GlobalSettingsUpdate {
+  model_provider?: string;
+  model_base_url?: string;
+  model_name?: string;
+  model_api_key?: string;
+}
+
 // ── Model Settings ─────────────────────────────────────────────────
 
 export interface ModelSettings {
@@ -155,6 +170,7 @@ export interface ModelSettings {
   model: string | null;
   has_api_key: boolean;
   platform_available: boolean;
+  using_global: boolean;
 }
 
 export interface ModelSettingsPayload {
@@ -191,6 +207,7 @@ export interface PracticeAnswer {
   question_id: number;
   user_answer_json: { value?: unknown } & Record<string, unknown>;
   is_correct: boolean;
+  feedback?: string | null;
   elapsed_seconds: number;
   created_at: string;
 }

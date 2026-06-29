@@ -16,7 +16,7 @@ def get_current_user(
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="未登录或登录已过期",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -33,3 +33,14 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
+
+
+def get_admin_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理员权限",
+        )
+    return current_user

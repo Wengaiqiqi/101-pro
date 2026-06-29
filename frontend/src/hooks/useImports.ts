@@ -8,40 +8,39 @@ export function useImports(userId: number | undefined) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchImports = useCallback(async (silent = false) => {
     if (!userId) return;
-
-    let isMounted = true;
-    setLoading(true);
-
-    listImportJobs()
-      .then((items) => {
-        if (isMounted) {
-          setImportJobs(items);
-          setError(null);
-        }
-      })
-      .catch((caught) => {
-        if (!isMounted) return;
-        if (caught instanceof ApiError && caught.status === 401) {
-          clearAuthState();
-          return;
-        }
-        setError(caught instanceof Error ? caught.message : '导入任务加载失败');
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
+    if (!silent) setLoading(true);
+    try {
+      const items = await listImportJobs();
+      setImportJobs(items);
+      setError(null);
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 401) {
+        clearAuthState();
+        return;
+      }
+      setError(caught instanceof Error ? caught.message : '导入任务加载失败');
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [userId]);
 
+  useEffect(() => {
+    fetchImports();
+  }, [fetchImports]);
+
+  // 有进行中的任务时，每3秒静默刷新
+  useEffect(() => {
+    const hasActive = importJobs.some((j) => j.status === 'pending' || j.status === 'processing');
+    if (!hasActive) return;
+    const timer = setInterval(() => fetchImports(true), 3000);
+    return () => clearInterval(timer);
+  }, [importJobs, fetchImports]);
+
   const refreshImports = useCallback(async () => {
-    const items = await listImportJobs();
-    setImportJobs(items);
-  }, []);
+    await fetchImports(true);
+  }, [fetchImports]);
 
   const createImport = useCallback(async (payload: ImportJobCreate) => {
     const created = await apiCreateImport(payload);

@@ -181,8 +181,7 @@ try {
         Wait-TcpPort -HostName "127.0.0.1" -Port 6379 -TimeoutSeconds 60
     }
 
-    Write-StartupStep "Applying database migrations..."
-    Invoke-CheckedCommand -FilePath $pythonCommand.Source -Arguments @("-m", "alembic", "upgrade", "head") -WorkingDirectory $backendRoot -Description "Database migration"
+    # Schema managed by app startup (_ensure_schema)
 
     $backendUrl = "http://127.0.0.1:8000/api/health"
     $frontendUrl = "http://127.0.0.1:5173"

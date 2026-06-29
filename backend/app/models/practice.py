@@ -40,6 +40,7 @@ class PracticeAnswer(Base):
     question_id: Mapped[int] = mapped_column(ForeignKey("questions.id", ondelete="CASCADE"), index=True)
     user_answer_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     is_correct: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    feedback: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     elapsed_seconds: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
 

@@ -1,6 +1,9 @@
 from datetime import UTC, datetime
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +15,7 @@ from app.models.question import Question
 from app.models.user import User
 from app.schemas.practice import PracticeAnswerCreate, PracticeSessionCreate
 from app.services._common import get_owned_bank as _get_owned_bank
+from app.services.llm_client import LLMConfig, evaluate_short_answer, evaluate_short_answer_by_ai
 
 
 def normalize_answer(value: object) -> list[str]:
@@ -36,17 +40,45 @@ def _normalized_text(value: object) -> str:
     return " ".join(str(value).strip().lower().split())
 
 
-def is_answer_correct(question: Question, user_answer: object) -> bool:
+def is_answer_correct(question: Question, user_answer: object, llm_config: LLMConfig | None = None) -> tuple[bool, str | None]:
+    """返回 (是否正确, AI反馈)。非简答题 feedback 为 None。"""
     question_type = question.type.lower()
     if question_type == "multiple_choice":
-        return _choice_answer_labels(question.answer_text) == _choice_answer_labels(user_answer)
+        return _choice_answer_labels(question.answer_text) == _choice_answer_labels(user_answer), None
+
+    if question_type == "short_answer" and llm_config:
+        qid = getattr(question, 'id', '?')
+        user_text = str(user_answer).strip() if user_answer else ""
+        if user_text:
+            if question.answer_text:
+                print(f"[AI grading] question {qid}: grading with reference answer")
+                result = evaluate_short_answer(llm_config, question.stem, question.answer_text, user_text)
+            else:
+                print(f"[AI grading] question {qid}: no reference answer, AI solving + grading")
+                result = evaluate_short_answer_by_ai(llm_config, question.stem, user_text)
+            print(f"[AI grading] question {qid}: result={result}")
+            return bool(result.get("correct", False)), str(result.get("feedback", ""))
+        else:
+            print(f"[AI grading] question {qid}: SKIPPED - empty user answer")
 
     expected = normalize_answer(question.answer_text.split("|"))
     actual = normalize_answer(user_answer)
     if question_type in {"fill_blank", "short_answer"}:
         accepted_answers = {_normalized_text(answer) for answer in question.answer_text.split("|")}
-        return _normalized_text(user_answer) in accepted_answers
-    return expected == actual
+        return _normalized_text(user_answer) in accepted_answers, None
+    return expected == actual, None
+
+
+def _resolve_llm_config(db: Session, user: User) -> LLMConfig | None:
+    """尝试获取 LLM 配置：用户设置 > 全局设置 > 平台设置。"""
+    from app.services.model_settings_service import resolve_model_config
+    try:
+        config = resolve_model_config(db, user)
+        print(f"[AI grading] LLM config resolved: provider={config.provider}, model={config.model}, base_url={config.base_url}")
+        return LLMConfig(provider=config.provider, base_url=config.base_url, model=config.model, api_key=config.api_key)
+    except Exception as exc:
+        print(f"[AI grading] LLM config resolution FAILED: {exc}")
+        return None
 
 
 def create_practice_session(db: Session, user: User, payload: PracticeSessionCreate) -> PracticeSession:
@@ -94,7 +126,9 @@ def submit_answer(db: Session, user: User, session_id: int, payload: PracticeAns
     if question is None:
         raise BadRequestError("Question does not belong to this practice session")
 
-    is_correct = is_answer_correct(question, payload.user_answer)
+    # 简答题使用 AI 评判
+    llm_config = _resolve_llm_config(db, user) if question.type == "short_answer" else None
+    is_correct, feedback = is_answer_correct(question, payload.user_answer, llm_config)
     answer = _get_practice_answer(db, session_id, payload.question_id, for_update=True)
     created = answer is None
     was_correct = answer.is_correct if answer is not None else None
@@ -103,7 +137,7 @@ def submit_answer(db: Session, user: User, session_id: int, payload: PracticeAns
 
     if created:
         answer = PracticeAnswer(session_id=session_id, question_id=payload.question_id, user_answer_json={})
-        _apply_answer(answer, payload, is_correct)
+        _apply_answer(answer, payload, is_correct, feedback)
         try:
             with db.begin_nested():
                 db.add(answer)
@@ -114,9 +148,9 @@ def submit_answer(db: Session, user: User, session_id: int, payload: PracticeAns
                 raise BadRequestError("Practice answer could not be saved")
             created = False
             was_correct = answer.is_correct
-            _apply_answer(answer, payload, is_correct)
+            _apply_answer(answer, payload, is_correct, feedback)
     else:
-        _apply_answer(answer, payload, is_correct)
+        _apply_answer(answer, payload, is_correct, feedback)
 
     if not is_correct and (created or was_correct is True):
         _record_wrong_answer(db, user, payload.question_id)
@@ -179,10 +213,12 @@ def _session_answer_count(db: Session, session_id: int) -> int:
     return db.scalar(select(func.count()).select_from(PracticeAnswer).where(PracticeAnswer.session_id == session_id)) or 0
 
 
-def _apply_answer(answer: PracticeAnswer, payload: PracticeAnswerCreate, is_correct: bool) -> None:
+def _apply_answer(answer: PracticeAnswer, payload: PracticeAnswerCreate, is_correct: bool, feedback: str | None = None) -> None:
     answer.user_answer_json = {"value": payload.user_answer}
     answer.elapsed_seconds = payload.elapsed_seconds
     answer.is_correct = is_correct
+    if feedback:
+        answer.feedback = feedback
 
 
 def _record_wrong_answer(db: Session, user: User, question_id: int) -> None:

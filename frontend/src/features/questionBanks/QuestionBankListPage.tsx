@@ -2,6 +2,7 @@ import { FormEvent, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, BookOpen, ArrowRight, Trash2 } from 'lucide-react';
 import type { QuestionBank } from '../../api/types';
+import { ConfirmModal } from '../../components/ConfirmModal';
 import { EmptyState } from '../../components/EmptyState';
 import { Field } from '../../components/Field';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -21,6 +22,7 @@ export function QuestionBankListPage({ banks, onCreate, onDelete }: QuestionBank
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const [deleteTarget, setDeleteTarget] = useState<QuestionBank | null>(null);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,10 +61,10 @@ export function QuestionBankListPage({ banks, onCreate, onDelete }: QuestionBank
       <section className="bg-white rounded-xl border border-black/[0.06] shadow-sm overflow-hidden">
         <form className="flex items-end gap-4 p-5 bg-zinc-50/50 border-b border-black/[0.06] max-md:flex-col max-md:items-stretch" aria-label="新建题库" onSubmit={handleCreate}>
           <div className="flex-1">
-            <Field ref={nameRef} label="名称 (Name)" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：高频前端面试题" required />
+            <Field ref={nameRef} label="名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：高频前端面试题" required />
           </div>
           <div className="flex-1">
-            <Field label="描述 (Description)" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="简短说明题库用途" />
+            <Field label="描述" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="简短说明题库用途" />
           </div>
           <button
             className="inline-flex items-center justify-center gap-2 h-[38px] px-6 rounded-md bg-white border border-black/[0.1] text-black text-[13px] font-semibold hover:bg-zinc-50 hover:border-black/[0.2] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -133,11 +135,7 @@ export function QuestionBankListPage({ banks, onCreate, onDelete }: QuestionBank
                             className="inline-flex items-center justify-center w-8 h-8 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                             type="button"
                             title="删除题库"
-                            onClick={async () => {
-                              if (confirm(`确定删除题库"${bank.name}"？所有题目将一并删除。`)) {
-                                await onDelete(bank.id);
-                              }
-                            }}
+                            onClick={() => setDeleteTarget(bank)}
                           >
                             <Trash2 size={14} />
                           </button>
@@ -155,6 +153,21 @@ export function QuestionBankListPage({ banks, onCreate, onDelete }: QuestionBank
           </div>
         )}
       </section>
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        title="删除题库"
+        message={`确定删除题库"${deleteTarget?.name}"？所有题目将一并删除。`}
+        confirmLabel="删除"
+        danger
+        onConfirm={async () => {
+          if (deleteTarget && onDelete) {
+            await onDelete(deleteTarget.id);
+          }
+          setDeleteTarget(null);
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

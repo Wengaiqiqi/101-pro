@@ -18,7 +18,7 @@ router = APIRouter(tags=["import-jobs"])
 @router.post("/import-jobs", response_model=ImportJobResponse, status_code=status.HTTP_201_CREATED)
 def create_import_job(
     bank_id: int = Form(...),
-    question_types: str = Form("single_choice"),
+    question_types: str = Form(""),
     question_count: int = Form(0),
     difficulty: str = Form("auto"),
     language: str = Form("zh-CN"),
@@ -56,6 +56,15 @@ def get_import_job(
     db: Session = Depends(get_db),
 ) -> ImportJobResponse:
     return import_service.get_import_job(db, current_user, import_job_id)
+
+
+@router.delete("/import-jobs/{import_job_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_import_job(
+    import_job_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    import_service.delete_import_job(db, current_user, import_job_id)
 
 
 @router.post("/import-jobs/{import_job_id}/retry", response_model=ImportJobResponse)

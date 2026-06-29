@@ -22,6 +22,7 @@ class PracticeAnswerResponse(BaseModel):
     question_id: int
     user_answer_json: dict[str, Any]
     is_correct: bool
+    feedback: str | None = None
     elapsed_seconds: int
     created_at: datetime
 

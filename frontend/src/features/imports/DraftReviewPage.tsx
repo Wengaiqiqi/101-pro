@@ -14,6 +14,17 @@ interface DraftReviewPageProps {
   onPublished: () => void;
 }
 
+const ANSWER_REQUIRED_TYPES = new Set([
+  'single_choice',
+  'multiple_choice',
+  'true_false',
+  'fill_blank',
+]);
+
+function requiresAnswer(questionType: string): boolean {
+  return ANSWER_REQUIRED_TYPES.has(questionType);
+}
+
 export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   const navigate = useNavigate();
   const [drafts, setDrafts] = useState<ImportedQuestionDraft[]>([]);
@@ -25,6 +36,8 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const editingDraft = drafts.find((item) => item.id === editingId);
+  const answerRequired = editingDraft ? requiresAnswer(editingDraft.question_type) : true;
 
   useEffect(() => {
     let isMounted = true;
@@ -200,10 +213,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
             {stem && <div className="mt-1 p-2 rounded bg-slate-50 text-[12px] text-slate-600"><LatexText text={stem} /></div>}
           </div>
           <Field label="解析" value={explanation} onChange={(event) => setExplanation(event.target.value)} />
-          {(() => {
-            const editingDraft = drafts.find((item) => item.id === editingId);
-            return editingDraft && isChoiceQuestion(editingDraft.question_type);
-          })() ? (
+          {editingDraft && isChoiceQuestion(editingDraft.question_type) ? (
             <>
               {options.map((option, index) => (
                 <div key={index} className="flex items-end gap-2">
@@ -234,7 +244,12 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
               </div>
             </>
           ) : (
-            <Field label="答案" value={answerText} onChange={(event) => setAnswerText(event.target.value)} required />
+            <Field
+              label={answerRequired ? '答案' : '答案（可选）'}
+              value={answerText}
+              onChange={(event) => setAnswerText(event.target.value)}
+              required={answerRequired}
+            />
           )}
           <button
             className="w-full inline-flex items-center justify-center gap-2 min-h-[38px] rounded-lg border border-teal-600 bg-teal-600 text-white text-[13px] font-bold hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed"

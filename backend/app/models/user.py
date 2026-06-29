@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
-from typing import Optional
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -12,7 +11,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
-    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    email = Column(String(255), unique=True, index=True, nullable=True, default=None)
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="user", server_default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")

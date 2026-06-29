@@ -127,6 +127,11 @@ export function PracticeResultPage({ session, questions, onRestart }: PracticeRe
                             {getQuestionTypeLabel(question.question_type)}
                           </span>
                         )}
+                        {answer.feedback && (
+                          <span className="text-[11px] text-zinc-400 font-medium">
+                            AI：{answer.feedback}
+                          </span>
+                        )}
                       </div>
 
                       {/* Question stem */}

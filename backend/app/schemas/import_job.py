@@ -14,6 +14,7 @@ class ImportJobResponse(BaseModel):
     progress: int
     error_message: str | None
     generation_config: dict[str, Any]
+    question_count: int = 0
     created_at: datetime
     updated_at: datetime
 

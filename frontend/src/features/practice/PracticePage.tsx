@@ -116,25 +116,6 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
     }
   }
 
-  // Practice mode: submit text answer
-  async function handleTextSubmit(question: Question) {
-    if (!session) return;
-    const answer = answers[question.id];
-    if (!hasAnswer(answer)) return;
-    setError(null);
-    try {
-      const saved = await submitPracticeAnswer(session.id, {
-        question_id: question.id,
-        user_answer: answer,
-        elapsed_seconds: 0,
-      });
-      setSubmittedMap((prev) => ({ ...prev, [question.id]: saved }));
-      setRevealedSet((prev) => new Set(prev).add(question.id));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '提交失败');
-    }
-  }
-
   async function handleSubmitAll() {
     if (!session) return;
     const unanswered = sessionQuestions.filter((q) => !hasAnswer(answers[q.id]));
@@ -242,13 +223,20 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
                       </span>
                     )}
                     {isRevealed && submitted && (
-                      <span className={cn(
-                        'inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-bold',
-                        submitted.is_correct ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                      )}>
-                        {submitted.is_correct ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                        {submitted.is_correct ? '正确' : '错误'}
-                      </span>
+                      <>
+                        <span className={cn(
+                          'inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-bold',
+                          submitted.is_correct ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                        )}>
+                          {submitted.is_correct ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                          {submitted.is_correct ? '正确' : '错误'}
+                        </span>
+                        {submitted.feedback && (
+                          <span className="text-[11px] text-zinc-400 font-medium ml-1">
+                            AI：{submitted.feedback}
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -262,32 +250,22 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
                     question={question}
                     answer={currentAnswer ?? ''}
                     onChange={(value) => {
-                      if (!isExamMode && !isRevealed) {
-                        // Practice mode: auto-reveal on choice selection
+                      if (!isExamMode && !isRevealed && !isTextQuestion(question.question_type)) {
+                        // Practice mode: auto-reveal on choice selection only
                         void handleAutoReveal(question, value);
                       } else {
                         setAnswerForQuestion(question.id, value);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!isExamMode && !isRevealed && isTextQuestion(question.question_type) && hasAnswer(currentAnswer)) {
+                        void handleAutoReveal(question, currentAnswer!);
                       }
                     }}
                     disabled={isExamMode ? false : isRevealed}
                     revealed={isRevealed}
                     submitted={submitted}
                   />
-
-                  {/* Practice mode: submit button for text questions only */}
-                  {!isExamMode && !isRevealed && isTextQuestion(question.question_type) && (
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        className="inline-flex items-center justify-center gap-2 h-[36px] px-4 rounded-md bg-zinc-100 text-zinc-700 text-[13px] font-semibold hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                        type="button"
-                        disabled={!hasAnswer(currentAnswer)}
-                        onClick={() => void handleTextSubmit(question)}
-                      >
-                        <CheckCircle2 size={14} />
-                        确认答案
-                      </button>
-                    </div>
-                  )}
                 </div>
               </article>
             );
@@ -533,6 +511,7 @@ function AnswerControl({
   disabled,
   revealed,
   submitted,
+  onBlur,
 }: {
   question: Question;
   answer: string | string[];
@@ -540,6 +519,7 @@ function AnswerControl({
   disabled?: boolean;
   revealed?: boolean;
   submitted?: PracticeAnswer;
+  onBlur?: () => void;
 }) {
   const correctLabels = question.options.filter((o) => o.is_correct).map((o) => o.label ?? '');
 
@@ -637,11 +617,12 @@ function AnswerControl({
 
   return (
     <div className="grid gap-2">
-      <span className="text-[13px] font-semibold text-zinc-700">你的答案 (Your Answer)</span>
+      <span className="text-[13px] font-semibold text-zinc-700">你的答案</span>
       <textarea
         className="w-full min-h-[100px] p-3 border border-black/[0.1] rounded-md text-[14px] text-black bg-white outline-none focus:border-black focus:ring-1 focus:ring-black transition-all resize-y"
         value={Array.isArray(answer) ? answer.join('、') : answer}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={() => onBlur?.()}
         rows={3}
         placeholder="请在此输入你的详细答案..."
         disabled={disabled}

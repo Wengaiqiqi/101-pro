@@ -3,7 +3,7 @@ import logging
 from typing import Any
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
@@ -53,15 +53,41 @@ def create_import_job(
     return job
 
 
+def _attach_question_counts(db: Session, jobs: list[ImportJob]) -> None:
+    """Fetch draft counts and attach as transient ``question_count`` attribute."""
+    if not jobs:
+        return
+    job_ids = [j.id for j in jobs]
+    rows = db.execute(
+        select(ImportedQuestionDraft.import_job_id, func.count())
+        .where(ImportedQuestionDraft.import_job_id.in_(job_ids))
+        .group_by(ImportedQuestionDraft.import_job_id)
+    ).all()
+    count_map = {job_id: cnt for job_id, cnt in rows}
+    for job in jobs:
+        job.question_count = count_map.get(job.id, 0)
+
+
 def list_import_jobs(db: Session, user: User, *, skip: int = 0, limit: int = 100) -> list[ImportJob]:
-    return list(db.scalars(select(ImportJob).where(ImportJob.user_id == user.id).order_by(ImportJob.id).offset(skip).limit(limit)))
+    jobs = list(db.scalars(select(ImportJob).where(ImportJob.user_id == user.id).order_by(ImportJob.id).offset(skip).limit(limit)))
+    _attach_question_counts(db, jobs)
+    return jobs
 
 
 def get_import_job(db: Session, user: User, import_job_id: int) -> ImportJob:
     job = db.scalar(select(ImportJob).where(ImportJob.id == import_job_id, ImportJob.user_id == user.id))
     if job is None:
         raise NotFoundError()
+    _attach_question_counts(db, [job])
     return job
+
+
+def delete_import_job(db: Session, user: User, import_job_id: int) -> None:
+    job = get_import_job(db, user, import_job_id)
+    db.execute(delete(ImportedQuestionDraft).where(ImportedQuestionDraft.import_job_id == job.id))
+    db.execute(delete(ImportJobChunk).where(ImportJobChunk.import_job_id == job.id))
+    db.delete(job)
+    db.commit()
 
 
 def retry_import_job(db: Session, user: User, import_job_id: int) -> ImportJob:

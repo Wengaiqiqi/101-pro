@@ -71,18 +71,31 @@ if (-not $SkipInstall) {
     }
 }
 
-# ── Database migration ───────────────────────────────────────────
-Write-Host "[101 Pro] Applying database migrations..." -ForegroundColor Cyan
-Push-Location $backendRoot
-cmd /c "python -m alembic upgrade head 2>&1"
-if ($LASTEXITCODE -ne 0) { throw "Database migration failed." }
-Pop-Location
+# ── Database schema managed by app startup (_ensure_schema) ──────
 
 # ── Launch backend, worker, and frontend in separate windows ──────
 $backendCmdFile = Join-Path $repoRoot "backend.cmd"
 $frontendCmdFile = Join-Path $repoRoot "frontend.cmd"
 Start-Process "cmd.exe" -ArgumentList "/k `"$backendCmdFile`""
-Start-Sleep -Milliseconds 500
+
+# Wait for backend to be ready
+Write-Host "[101 Pro] Waiting for backend to start..." -ForegroundColor Cyan
+$backendReady = $false
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Seconds 1
+    try {
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:8000/docs" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+        if ($response.StatusCode -eq 200) {
+            $backendReady = $true
+            break
+        }
+    } catch { }
+}
+if ($backendReady) {
+    Write-Host "[101 Pro] Backend is ready!" -ForegroundColor Green
+} else {
+    Write-Host "[101 Pro] Backend may not be ready yet, continuing..." -ForegroundColor Yellow
+}
 
 if (-not $UseDocker) {
     Start-Process "cmd.exe" -ArgumentList "/k `"cd /d `"$backendRoot`" && title 101 Pro - Local Worker && python -m app.tasks.local_worker`""

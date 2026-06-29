@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FilePlus, FileText, ArrowRight, Trash2 } from 'lucide-react';
 import type { ImportJob, QuestionBank } from '../../api/types';
+import { ConfirmModal } from '../../components/ConfirmModal';
 import { EmptyState } from '../../components/EmptyState';
 import { Pagination } from '../../components/Pagination';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -17,6 +18,7 @@ interface ImportJobsPageProps {
 export function ImportJobsPage({ jobs, banks, onDelete }: ImportJobsPageProps) {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
+  const [deleteTarget, setDeleteTarget] = useState<ImportJob | null>(null);
   const pageSize = 10;
   const paged = jobs.slice((page - 1) * pageSize, page * pageSize);
 
@@ -91,11 +93,7 @@ export function ImportJobsPage({ jobs, banks, onDelete }: ImportJobsPageProps) {
                             className="inline-flex items-center justify-center w-8 h-8 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                             type="button"
                             title="删除记录"
-                            onClick={async () => {
-                              if (confirm(`确定删除导入记录"${job.filename}"？`)) {
-                                await onDelete(job.id);
-                              }
-                            }}
+                            onClick={() => setDeleteTarget(job)}
                           >
                             <Trash2 size={14} />
                           </button>
@@ -119,6 +117,21 @@ export function ImportJobsPage({ jobs, banks, onDelete }: ImportJobsPageProps) {
           </div>
         )}
       </section>
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        title="删除导入记录"
+        message={`确定删除导入记录"${deleteTarget?.filename}"？`}
+        confirmLabel="删除"
+        danger
+        onConfirm={async () => {
+          if (deleteTarget && onDelete) {
+            await onDelete(deleteTarget.id);
+          }
+          setDeleteTarget(null);
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

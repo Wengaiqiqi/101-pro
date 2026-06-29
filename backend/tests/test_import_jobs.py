@@ -510,3 +510,247 @@ def test_import_job_accepts_auto_count_and_difficulty(client: TestClient, monkey
     assert len(drafts) == 1
     assert drafts[0]["stem"] == "Test question?"
     assert len(drafts[0]["options_json"]) == 2
+
+
+def test_import_job_empty_question_types_means_all_types(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from app.services import storage
+
+    monkeypatch.setattr(
+        storage,
+        "save_upload",
+        lambda user_id, upload: (
+            upload.filename,
+            str(Path(__file__).with_name("fixtures").joinpath("import_fixture.txt")),
+        ),
+    )
+    token = register_and_login(
+        client,
+        "alice_all_types",
+        "alice_all_types@example.com",
+    )
+    bank_id = _create_bank(client, token, name="All Types Bank")
+
+    response = client.post(
+        "/api/import-jobs",
+        headers=_headers(token),
+        data={
+            "bank_id": str(bank_id),
+            "question_types": "",
+            "question_count": "0",
+        },
+        files={"file": ("exam.pdf", b"pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["generation_config"]["question_types"] == []
+
+
+def test_pdf_import_creates_chunks_and_drafts(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from sqlalchemy import select
+
+    from app.models.import_job import ImportJobChunk, ImportedQuestionDraft
+    from app.services import document_extractors, import_service, llm_client, storage
+
+    page_texts = [f"page {i}" for i in range(1, 5)]
+    full_text = "\n\n".join(page_texts)
+    monkeypatch.setattr(
+        import_service,
+        "resolve_model_config",
+        lambda db, user: _FakeModelConfig(),
+    )
+    monkeypatch.setattr(
+        storage,
+        "save_upload",
+        lambda user_id, upload: (
+            upload.filename,
+            str(Path(__file__).with_name("fixtures").joinpath("import_fixture.txt")),
+        ),
+    )
+    monkeypatch.setattr(
+        document_extractors,
+        "extract_text",
+        lambda path, mime, name: full_text,
+    )
+    monkeypatch.setattr(
+        llm_client,
+        "generate_question_drafts",
+        lambda config, text, generation_config: [
+            {
+                "type": "short_answer",
+                "stem": text,
+                "options": [],
+                "answer": {"text": "answer"},
+                "explanation": "",
+                "difficulty": "medium",
+                "tags": [],
+            }
+        ],
+    )
+
+    token = register_and_login(client, "pdf_user", "pdf_user@example.com")
+    bank_id = _create_bank(client, token, name="PDF Bank")
+    response = client.post(
+        "/api/import-jobs",
+        headers=_headers(token),
+        data={"bank_id": str(bank_id), "question_types": "short_answer"},
+        files={"file": ("exam.pdf", b"pdf", "application/pdf")},
+    )
+    assert response.status_code == 201
+    job_id = int(response.json()["id"])
+    _process_job(client, job_id)
+
+    db = client.app.state.testing_session_local()
+    try:
+        chunks = list(
+            db.scalars(
+                select(ImportJobChunk)
+                .where(ImportJobChunk.import_job_id == job_id)
+                .order_by(ImportJobChunk.chunk_index)
+            )
+        )
+        drafts = list(
+            db.scalars(
+                select(ImportedQuestionDraft)
+                .where(ImportedQuestionDraft.import_job_id == job_id)
+                .order_by(ImportedQuestionDraft.id)
+            )
+        )
+    finally:
+        db.close()
+
+    # Text short enough to fit in a single chunk
+    assert len(chunks) == 1
+    assert chunks[0].text == full_text
+    # Each chunk produces one draft
+    assert len(drafts) == 1
+    assert drafts[0].source_chunk_id == chunks[0].id
+
+
+def test_text_import_still_uses_generate_question_drafts(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from app.services import import_service, llm_client, storage
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        import_service,
+        "resolve_model_config",
+        lambda db, user: _FakeModelConfig(),
+    )
+    monkeypatch.setattr(
+        storage,
+        "save_upload",
+        lambda user_id, upload: (
+            upload.filename,
+            str(Path(__file__).with_name("fixtures").joinpath("import_fixture.txt")),
+        ),
+    )
+    monkeypatch.setattr(
+        llm_client,
+        "generate_question_drafts",
+        lambda config, text, generation_config: calls.append(text)
+        or [
+            {
+                "type": "single_choice",
+                "stem": "Which option is correct?",
+                "options": [
+                    {
+                        "label": "A",
+                        "content": "Alpha",
+                        "is_correct": True,
+                        "sort_order": 1,
+                    },
+                    {
+                        "label": "B",
+                        "content": "Beta",
+                        "is_correct": False,
+                        "sort_order": 2,
+                    },
+                ],
+                "answer": {"label": "A"},
+                "explanation": "",
+                "difficulty": "easy",
+                "tags": [],
+            }
+        ],
+    )
+
+    token = register_and_login(client, "text_user", "text_user@example.com")
+    bank_id = _create_bank(client, token, name="Text Bank")
+    response = client.post(
+        "/api/import-jobs",
+        headers=_headers(token),
+        data={"bank_id": str(bank_id), "question_types": "single_choice"},
+        files={"file": ("fixture.txt", b"fixture", "text/plain")},
+    )
+    assert response.status_code == 201
+    _process_job(client, int(response.json()["id"]))
+
+    assert calls == ["Alpha and Beta. Beta is the answer."]
+
+
+def test_short_answer_without_answer_is_rejected_on_publish() -> None:
+    from app.core.exceptions import BadRequestError
+    from app.models.import_job import ImportJob, ImportedQuestionDraft
+    from app.services.import_service import _question_from_draft
+
+    job = ImportJob(
+        id=1,
+        user_id=1,
+        bank_id=7,
+        original_filename="exam.pdf",
+        stored_path="x",
+        mime_type="application/pdf",
+    )
+    draft = ImportedQuestionDraft(
+        import_job_id=1,
+        type="short_answer",
+        stem="说明系统稳定的含义",
+        options_json=[],
+        answer_json={},
+        explanation="",
+        difficulty="medium",
+        tags=[],
+    )
+
+    with pytest.raises(BadRequestError) as exc_info:
+        _question_from_draft(job, draft)
+
+    assert exc_info.value.detail == "Draft answer is required"
+
+
+def test_fill_blank_without_answer_is_rejected_on_publish() -> None:
+    from app.core.exceptions import BadRequestError
+    from app.models.import_job import ImportJob, ImportedQuestionDraft
+    from app.services.import_service import _question_from_draft
+
+    job = ImportJob(
+        id=1,
+        user_id=1,
+        bank_id=7,
+        original_filename="exam.pdf",
+        stored_path="x",
+        mime_type="application/pdf",
+    )
+    draft = ImportedQuestionDraft(
+        import_job_id=1,
+        type="fill_blank",
+        stem="系统型别是 ____",
+        options_json=[],
+        answer_json={"text": ""},
+        explanation="",
+        difficulty="medium",
+        tags=[],
+    )
+
+    with pytest.raises(BadRequestError) as exc_info:
+        _question_from_draft(job, draft)
+
+    assert exc_info.value.detail == "Draft answer is required"

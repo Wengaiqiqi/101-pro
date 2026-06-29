@@ -14,6 +14,7 @@ class ModelSettingsResponse(BaseModel):
     model: str | None
     has_api_key: bool
     platform_available: bool
+    using_global: bool = False
 
 
 class ModelConnectionTestResponse(BaseModel):

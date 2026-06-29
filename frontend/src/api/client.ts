@@ -1,6 +1,8 @@
 import type {
   Difficulty,
   DraftStatus,
+  GlobalSettings,
+  GlobalSettingsUpdate,
   ImportedQuestionDraft,
   ImportedQuestionDraftPayload,
   ImportJob,
@@ -256,6 +258,42 @@ export function testModelSettings(): Promise<ModelConnectionTestResponse> {
   });
 }
 
+// ── Admin ─────────────────────────────────────────────────────────
+
+export function listUsers(): Promise<User[]> {
+  return apiRequest<User[]>('/api/admin/users');
+}
+
+export function toggleUserActive(userId: number, isActive: boolean): Promise<User> {
+  return apiRequest<User>(`/api/admin/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_active: isActive })
+  });
+}
+
+export function deleteUser(userId: number): Promise<void> {
+  return apiRequest<void>(`/api/admin/users/${userId}`, {
+    method: 'DELETE'
+  });
+}
+
+export function getGlobalSettings(): Promise<GlobalSettings> {
+  return apiRequest<GlobalSettings>('/api/admin/settings');
+}
+
+export function saveGlobalSettings(payload: GlobalSettingsUpdate): Promise<GlobalSettings> {
+  return apiRequest<GlobalSettings>('/api/admin/settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function testGlobalSettings(): Promise<ModelConnectionTestResponse> {
+  return apiRequest<ModelConnectionTestResponse>('/api/admin/settings/test', {
+    method: 'POST'
+  });
+}
+
 async function parseResponse(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) {
@@ -392,7 +430,10 @@ function serializeDraftPayload(payload: ImportedQuestionDraftPayload) {
   const answerJson = payload.answer_json ?? {};
   const answerText = payload.answer_text?.trim();
 
-  const isChoice = payload.question_type === 'single_choice' || payload.question_type === 'multiple_choice';
+  const isChoice =
+    payload.question_type === 'single_choice' ||
+    payload.question_type === 'multiple_choice' ||
+    payload.question_type === 'true_false';
 
   return {
     type: payload.question_type,

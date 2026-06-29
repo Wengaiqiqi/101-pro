@@ -17,6 +17,8 @@ import { WrongQuestionsPage } from './features/practice/WrongQuestionsPage';
 import { BankDetailPage } from './features/questionBanks/BankDetailPage';
 import { QuestionBankListPage } from './features/questionBanks/QuestionBankListPage';
 import { ModelSettingsPage } from './features/settings/ModelSettingsPage';
+import { AdminUsersPage } from './features/admin/AdminUsersPage';
+import { AdminSettingsPage } from './features/admin/AdminSettingsPage';
 import { getImportJob } from './api/client';
 import type { User } from './api/types';
 
@@ -154,6 +156,8 @@ export function App() {
           <Route path="practice" element={<PracticeWrapper user={user} />} />
           <Route path="mistakes" element={<MistakesWrapper user={user} />} />
           <Route path="models" element={<ModelSettingsPage />} />
+          <Route path="admin/users" element={<AdminUsersPage currentUser={user} />} />
+          <Route path="admin/settings" element={<AdminSettingsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </AppShell>

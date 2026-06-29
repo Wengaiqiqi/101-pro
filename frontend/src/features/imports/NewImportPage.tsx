@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileUp, ArrowLeft, Settings2, ShieldCheck, Plus, X } from 'lucide-react';
+import { FileUp, FileText, ArrowLeft, Settings2, ShieldCheck, Plus, X } from 'lucide-react';
 import type { Difficulty, ImportJobCreate, QuestionBank, QuestionBankCreate, QuestionType } from '../../api/types';
 import { Field } from '../../components/Field';
 import { cn } from '../../lib/utils';
@@ -28,7 +28,7 @@ export function NewImportPage({ banks, onCreateBank, onCreate, onDone }: NewImpo
   const [questionTypes, setQuestionTypes] = useState<QuestionType[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty>('auto');
   const [language, setLanguage] = useState('zh-CN');
-  const [withExplanations, setWithExplanations] = useState(true);
+  const [withExplanations, setWithExplanations] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canSubmit = useMemo(() => Boolean(bankId && files.length > 0), [bankId, files]);
@@ -134,23 +134,34 @@ export function NewImportPage({ banks, onCreateBank, onCreate, onDone }: NewImpo
             <div className="space-y-6">
               <label className="grid gap-2">
                 <span className="text-[13px] font-semibold text-zinc-700">目标题库</span>
-                <select
-                  className="w-full h-[40px] px-3 appearance-none bg-white border border-black/[0.1] rounded-md text-[13px] font-semibold text-black shadow-sm focus:border-black focus:ring-1 focus:ring-black transition-all cursor-pointer"
-                  value={bankId}
-                  onChange={(event) => {
-                    if (event.target.value === '__new__') {
-                      setShowBankModal(true);
-                    } else {
-                      setBankId(event.target.value);
-                    }
-                  }}
-                  required
-                >
-                  {banks.map((bank) => (
-                    <option key={bank.id} value={bank.id}>{bank.name}</option>
-                  ))}
-                  <option value="__new__">＋ 新建题库</option>
-                </select>
+                {banks.length > 0 ? (
+                  <select
+                    className="w-full h-[40px] px-3 appearance-none bg-white border border-black/[0.1] rounded-md text-[13px] font-semibold text-black shadow-sm focus:border-black focus:ring-1 focus:ring-black transition-all cursor-pointer"
+                    value={bankId}
+                    onChange={(event) => {
+                      if (event.target.value === '__new__') {
+                        setShowBankModal(true);
+                      } else {
+                        setBankId(event.target.value);
+                      }
+                    }}
+                  >
+                    <option value="" disabled>请选择题库</option>
+                    {banks.map((bank) => (
+                      <option key={bank.id} value={bank.id}>{bank.name}</option>
+                    ))}
+                    <option value="__new__">＋ 新建题库</option>
+                  </select>
+                ) : (
+                  <button
+                    type="button"
+                    className="w-full h-[40px] flex items-center justify-center gap-2 rounded-md border border-dashed border-black/[0.2] bg-white text-[13px] font-semibold text-zinc-500 hover:text-black hover:border-black/[0.4] transition-all"
+                    onClick={() => setShowBankModal(true)}
+                  >
+                    <Plus size={16} />
+                    暂无题库，点击新建
+                  </button>
+                )}
               </label>
 
               <div className="grid gap-2">
@@ -171,7 +182,6 @@ export function NewImportPage({ banks, onCreateBank, onCreate, onDone }: NewImpo
                       setFiles(selected.slice(0, 3));
                       event.target.value = '';
                     }}
-                    required
                   />
                 </label>
                 {files.length > 0 && (
