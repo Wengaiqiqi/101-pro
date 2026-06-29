@@ -8,7 +8,7 @@
 - 后端：FastAPI、SQLAlchemy、Alembic、SQLite / PostgreSQL
 - 后台任务：本地导入 Worker 或 Celery + Redis
 - 文档解析：pypdf、python-docx
-- 管理员账户：www，ydmy5247
+- 管理员账户：admin，admin101
 
 ## 环境要求
 
