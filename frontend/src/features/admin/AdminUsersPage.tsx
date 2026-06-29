@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, ShieldOff, Trash2, Users } from 'lucide-react';
-import { listUsers, toggleUserActive, deleteUser } from '../../api/client';
+import { ShieldCheck, ShieldOff, Trash2, Users, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { listUsers, toggleUserActive, deleteUser, changePassword } from '../../api/client';
 import type { User } from '../../api/types';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { EmptyState } from '../../components/EmptyState';
@@ -17,6 +17,16 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+
+  // Password change state
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdError, setPwdError] = useState<string | null>(null);
+  const [pwdSuccess, setPwdSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     listUsers()
@@ -54,6 +64,38 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     } finally {
       setWorkingId(null);
       setDeleteTarget(null);
+    }
+  }
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwdError(null);
+    setPwdSuccess(null);
+
+    if (!oldPassword || !newPassword) {
+      setPwdError('请填写完整');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPwdError('新密码长度不能少于6位');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwdError('两次输入的新密码不一致');
+      return;
+    }
+
+    setPwdLoading(true);
+    try {
+      const res = await changePassword({ old_password: oldPassword, new_password: newPassword });
+      setPwdSuccess(res.message || '密码修改成功');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (e) {
+      setPwdError(e instanceof Error ? e.message : '密码修改失败');
+    } finally {
+      setPwdLoading(false);
     }
   }
 
@@ -171,6 +213,84 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* ── 修改密码 ─────────────────────────────────────────── */}
+      <section className="bg-white rounded-xl border border-black/[0.06] shadow-sm p-6 max-w-md">
+        <div className="flex items-center gap-2 mb-5">
+          <KeyRound size={18} className="text-zinc-500" />
+          <h3 className="m-0 text-lg font-bold text-black">修改密码</h3>
+        </div>
+
+        <form onSubmit={handleChangePassword} className="space-y-4">
+          <div>
+            <label className="block text-[13px] font-medium text-zinc-600 mb-1.5">原密码</label>
+            <div className="relative">
+              <input
+                type={showOld ? 'text' : 'password'}
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                className="w-full px-3 py-2 pr-9 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-zinc-400 transition-colors"
+                placeholder="请输入原密码"
+              />
+              <button
+                type="button"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                onClick={() => setShowOld(!showOld)}
+                tabIndex={-1}
+              >
+                {showOld ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[13px] font-medium text-zinc-600 mb-1.5">新密码</label>
+            <div className="relative">
+              <input
+                type={showNew ? 'text' : 'password'}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-3 py-2 pr-9 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-zinc-400 transition-colors"
+                placeholder="至少6位"
+              />
+              <button
+                type="button"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                onClick={() => setShowNew(!showNew)}
+                tabIndex={-1}
+              >
+                {showNew ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[13px] font-medium text-zinc-600 mb-1.5">确认新密码</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-zinc-400 transition-colors"
+              placeholder="再次输入新密码"
+            />
+          </div>
+
+          {pwdError && (
+            <div className="px-3 py-2 border border-red-200 rounded-md text-red-700 bg-red-50 text-sm">{pwdError}</div>
+          )}
+          {pwdSuccess && (
+            <div className="px-3 py-2 border border-emerald-200 rounded-md text-emerald-700 bg-emerald-50 text-sm">{pwdSuccess}</div>
+          )}
+
+          <button
+            type="submit"
+            disabled={pwdLoading}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-black text-white hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+          >
+            {pwdLoading ? '修改中...' : '确认修改'}
+          </button>
+        </form>
+      </section>
     </div>
   );
 }

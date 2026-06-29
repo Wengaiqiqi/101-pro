@@ -1,5 +1,6 @@
 import type {
   ActivityStats,
+  ChangePasswordPayload,
   Difficulty,
   DraftStatus,
   GlobalSettings,
@@ -296,6 +297,13 @@ export function saveGlobalSettings(payload: GlobalSettingsUpdate): Promise<Globa
 export function testGlobalSettings(): Promise<ModelConnectionTestResponse> {
   return apiRequest<ModelConnectionTestResponse>('/api/admin/settings/test', {
     method: 'POST'
+  });
+}
+
+export function changePassword(payload: ChangePasswordPayload): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/api/admin/change-password', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
 }
 

@@ -3,10 +3,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_admin_user, get_db
+from app.core.security import hash_password, verify_password
 from app.models.global_settings import GlobalSettings
 from app.services.model_settings_service import ResolvedModelConfig, encrypt_api_key, decrypt_api_key, test_model_connection
 from app.models.user import User
-from app.schemas.admin import AdminUserUpdate, GlobalSettingsResponse, GlobalSettingsUpdate
+from app.schemas.admin import AdminUserUpdate, ChangePasswordRequest, GlobalSettingsResponse, GlobalSettingsUpdate
 from app.schemas.user import UserResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -57,6 +58,21 @@ def delete_user(
         raise HTTPException(status_code=400, detail="不能删除自己的账号")
     db.delete(user)
     db.commit()
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    if not verify_password(payload.old_password, admin.password_hash):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="新密码长度不能少于6位")
+    admin.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"message": "密码修改成功"}
 
 
 # ── Global Settings ───────────────────────────────────────────────

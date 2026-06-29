@@ -18,3 +18,8 @@ class GlobalSettingsUpdate(BaseModel):
     model_base_url: Optional[str] = None
     model_name: Optional[str] = None
     model_api_key: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str

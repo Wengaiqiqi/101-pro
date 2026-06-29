@@ -162,6 +162,11 @@ export interface GlobalSettingsUpdate {
   model_api_key?: string;
 }
 
+export interface ChangePasswordPayload {
+  old_password: string;
+  new_password: string;
+}
+
 // ── Model Settings ─────────────────────────────────────────────────
 
 export interface ModelSettings {

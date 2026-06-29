@@ -18,11 +18,11 @@ def _seed_admin():
     """Create the default admin account if it doesn't exist."""
     db = SessionLocal()
     try:
-        admin = db.scalar(select(User).where(User.username == "www"))
+        admin = db.scalar(select(User).where(User.username == "admin"))
         if admin is None:
             db.add(User(
-                username="www",
-                password_hash=hash_password("ydmy5247"),
+                username="admin",
+                password_hash=hash_password("admin101"),
                 role="admin",
                 is_active=True,
             ))
