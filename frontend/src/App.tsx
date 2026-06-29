@@ -5,6 +5,7 @@ import { useBanks } from './hooks/useBanks';
 import { useImportJob } from './hooks/useImportJob';
 import { useImports } from './hooks/useImports';
 import { useQuestions } from './hooks/useQuestions';
+import { useActivityStats } from './hooks/useActivityStats';
 import { useWrongQuestions } from './hooks/useWrongQuestions';
 import { AuthPage } from './features/auth/AuthPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -28,12 +29,14 @@ function DashboardWrapper({ user }: { user: User }) {
   const { banks } = useBanks(user.id);
   const { importJobs } = useImports(user.id);
   const { wrongQuestions } = useWrongQuestions(user.id);
+  const { data: activityStats } = useActivityStats(7);
 
   return (
     <DashboardPage
       banks={banks}
       importJobs={[...importJobs].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())}
       wrongQuestionCount={wrongQuestions.filter((w) => w.mastery_status !== 'mastered').length}
+      activityStats={activityStats}
     />
   );
 }

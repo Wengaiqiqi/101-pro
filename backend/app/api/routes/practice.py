@@ -5,6 +5,7 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.practice import (
+    ActivityStatsResponse,
     PracticeAnswerCreate,
     PracticeAnswerResponse,
     PracticeSessionCreate,
@@ -74,3 +75,12 @@ def mark_wrong_question_mastered(
     db: Session = Depends(get_db),
 ) -> WrongQuestionResponse:
     return practice_service.mark_wrong_question_mastered(db, current_user, wrong_question_id)
+
+
+@router.get("/practice-stats", response_model=ActivityStatsResponse)
+def get_activity_stats(
+    days: int = 7,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ActivityStatsResponse:
+    return practice_service.get_activity_stats(db, current_user, days=min(days, 90))

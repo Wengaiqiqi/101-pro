@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 import logging
 import re
 from typing import Any
@@ -13,7 +13,7 @@ from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.practice import PracticeAnswer, PracticeSession, WrongQuestion
 from app.models.question import Question
 from app.models.user import User
-from app.schemas.practice import PracticeAnswerCreate, PracticeSessionCreate
+from app.schemas.practice import ActivityStatsResponse, DailyActivity, PracticeAnswerCreate, PracticeSessionCreate
 from app.services._common import get_owned_bank as _get_owned_bank
 from app.services.llm_client import LLMConfig, evaluate_short_answer, evaluate_short_answer_by_ai
 
@@ -258,3 +258,86 @@ def _record_wrong_answer(db: Session, user: User, question_id: int) -> None:
                 updated_at=now,
             )
         )
+
+
+def get_activity_stats(db: Session, user: User, days: int = 7) -> ActivityStatsResponse:
+    today = date.today()
+    start = today - timedelta(days=days - 1)
+    start_str = start.isoformat()
+
+    # Get sessions per day
+    session_rows = db.execute(
+        select(PracticeSession)
+        .where(PracticeSession.user_id == user.id)
+    ).scalars().all()
+
+    # Aggregate in Python to avoid SQLite func.date() timezone issues
+    day_sessions: dict[str, list[int]] = {}  # date_str -> [session_ids]
+    for s in session_rows:
+        if s.started_at is None:
+            continue
+        ds = s.started_at.date().isoformat() if s.started_at.tzinfo else s.started_at.strftime("%Y-%m-%d")
+        if ds >= start_str:
+            day_sessions.setdefault(ds, []).append(s.id)
+
+    # Get answers for those sessions
+    all_session_ids = [sid for sids in day_sessions.values() for sid in sids]
+    day_correct: dict[str, int] = {}
+    day_total: dict[str, int] = {}
+    day_elapsed: dict[str, int] = {}
+
+    if all_session_ids:
+        answers = db.execute(
+            select(PracticeAnswer)
+            .where(PracticeAnswer.session_id.in_(all_session_ids))
+        ).scalars().all()
+
+        # Build session_id -> date lookup
+        session_date: dict[int, str] = {}
+        for ds, sids in day_sessions.items():
+            for sid in sids:
+                session_date[sid] = ds
+
+        for a in answers:
+            ds = session_date.get(a.session_id)
+            if not ds:
+                continue
+            day_total[ds] = day_total.get(ds, 0) + 1
+            day_elapsed[ds] = day_elapsed.get(ds, 0) + a.elapsed_seconds
+            if a.is_correct:
+                day_correct[ds] = day_correct.get(ds, 0) + 1
+
+    daily: list[DailyActivity] = []
+    total_sessions = 0
+    total_questions = 0
+    total_correct = 0
+    total_elapsed = 0
+
+    for i in range(days):
+        d = start + timedelta(days=i)
+        ds = d.isoformat()
+        sessions = len(day_sessions.get(ds, []))
+        questions = day_total.get(ds, 0)
+        correct = day_correct.get(ds, 0)
+        elapsed = day_elapsed.get(ds, 0)
+
+        daily.append(DailyActivity(
+            date=ds,
+            session_count=sessions,
+            question_count=questions,
+            correct_count=correct,
+            elapsed_seconds=elapsed,
+        ))
+        total_sessions += sessions
+        total_questions += questions
+        total_correct += correct
+        total_elapsed += elapsed
+
+    return ActivityStatsResponse(
+        days=days,
+        total_sessions=total_sessions,
+        total_questions=total_questions,
+        total_correct=total_correct,
+        total_elapsed_seconds=total_elapsed,
+        daily=daily,
+    )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { BookOpenCheck, Settings2, Sparkles, CheckCircle2, XCircle, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { BookOpenCheck, Settings2, Sparkles, CheckCircle2, XCircle, Eye, EyeOff, ArrowRight, ArrowLeft } from 'lucide-react';
 
 import { createPracticeSession, finishPracticeSession, listQuestions, submitPracticeAnswer } from '../../api/client';
 import type { PracticeAnswer, PracticeSession, Question, QuestionBank, QuestionType, WrongQuestion } from '../../api/types';
@@ -177,13 +177,23 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
               {isExamMode ? '，全部答完后提交查看结果' : '，选择后即时查看答案'}
             </p>
           </div>
-          <button
-            className="inline-flex items-center justify-center gap-2 min-h-[36px] px-3 rounded-lg border border-slate-300 text-slate-700 bg-white text-[13px] font-bold hover:bg-slate-50"
-            type="button"
-            onClick={restart}
-          >
-            重新开始
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg border border-slate-300 text-slate-700 bg-white text-[13px] font-bold hover:bg-slate-50"
+              type="button"
+              onClick={restart}
+            >
+              <ArrowLeft size={14} />
+              返回
+            </button>
+            <button
+              className="inline-flex items-center justify-center gap-2 min-h-[36px] px-3 rounded-lg border border-slate-300 text-slate-700 bg-white text-[13px] font-bold hover:bg-slate-50"
+              type="button"
+              onClick={restart}
+            >
+              重新开始
+            </button>
+          </div>
         </header>
 
         {error ? (
@@ -273,7 +283,7 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
         </div>
 
         {/* Submit button at bottom */}
-        <div className="sticky bottom-4 flex justify-center">
+        <div className="flex justify-center pt-4 pb-8">
           <button
             className="inline-flex items-center justify-center gap-2 h-[44px] px-8 rounded-xl bg-black text-white text-[14px] font-bold shadow-lg hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             type="button"

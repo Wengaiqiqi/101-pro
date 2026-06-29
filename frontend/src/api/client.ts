@@ -1,4 +1,5 @@
 import type {
+  ActivityStats,
   Difficulty,
   DraftStatus,
   GlobalSettings,
@@ -239,6 +240,10 @@ export function markWrongQuestionMastered(wrongQuestionId: number): Promise<Wron
   return apiRequest<WrongQuestion>(`/api/wrong-questions/${wrongQuestionId}/mastered`, {
     method: 'POST'
   });
+}
+
+export function getActivityStats(days: number = 7): Promise<ActivityStats> {
+  return apiRequest<ActivityStats>(`/api/practice-stats?days=${days}`);
 }
 
 export function getModelSettings(): Promise<ModelSettings> {

@@ -237,3 +237,20 @@ export interface WrongQuestion {
   created_at: string;
   updated_at: string;
 }
+
+export interface DailyActivity {
+  date: string;
+  session_count: number;
+  question_count: number;
+  correct_count: number;
+  elapsed_seconds: number;
+}
+
+export interface ActivityStats {
+  days: number;
+  total_sessions: number;
+  total_questions: number;
+  total_correct: number;
+  total_elapsed_seconds: number;
+  daily: DailyActivity[];
+}

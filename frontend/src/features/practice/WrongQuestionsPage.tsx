@@ -4,6 +4,7 @@ import { CheckCheck, Filter, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { listQuestions, markWrongQuestionMastered } from '../../api/client';
 import type { Question, QuestionBank, WrongQuestion } from '../../api/types';
 import { EmptyState } from '../../components/EmptyState';
+import { LatexText } from '../../components/LatexText';
 import { Pagination } from '../../components/Pagination';
 import { StatusBadge } from '../../components/StatusBadge';
 import { formatShortDate } from '../../lib/utils';
@@ -154,13 +155,13 @@ export function WrongQuestionsPage({ banks, wrongQuestions, onChanged }: WrongQu
                     </div>
 
                     <h3 className={cn("m-0 text-[15px] font-semibold leading-relaxed tracking-tight", isMastered ? "text-zinc-500 line-through decoration-zinc-300 decoration-1" : "text-black")}>
-                      {question?.stem ?? `Question #${item.question_id}`}
+                      <LatexText text={question?.stem ?? `Question #${item.question_id}`} />
                     </h3>
 
                     {question?.explanation && (
                       <div className="mt-4 p-3.5 rounded-lg bg-zinc-50/80 border border-black/[0.04] text-[13px] text-zinc-600 leading-relaxed">
                         <strong className="text-black font-semibold mr-2">解析：</strong>
-                        {question.explanation}
+                        <LatexText text={question.explanation} />
                       </div>
                     )}
                   </div>

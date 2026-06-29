@@ -55,3 +55,20 @@ class WrongQuestionResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DailyActivity(BaseModel):
+    date: str
+    session_count: int
+    question_count: int
+    correct_count: int
+    elapsed_seconds: int
+
+
+class ActivityStatsResponse(BaseModel):
+    days: int
+    total_sessions: int
+    total_questions: int
+    total_correct: int
+    total_elapsed_seconds: int
+    daily: list[DailyActivity]
