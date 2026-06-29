@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = $PSScriptRoot
 $backendRoot = Join-Path $repoRoot "backend"
 $frontendRoot = Join-Path $repoRoot "frontend"
 $runRoot = Join-Path $repoRoot ".run"
