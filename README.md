@@ -1,6 +1,6 @@
 # 101 Pro 刷题平台
 
-101 Pro 是一个多用户题库应用。每个账户拥有独立的题库，可以导入 PDF 或 DOCX 文档，审阅大模型生成的草稿，刷题练习，维护错题本，并配置个人 OpenAI 兼容的模型服务商。
+101 Pro 是一个多用户题库应用。每个账户拥有独立的题库，可以导入 PDF 或 DOCX 文档，审阅大模型生成的草稿，刷题练习（单选/多选/判断/填空/简答），维护错题本，浏览和 Fork 公开题库，并配置个人 OpenAI 兼容的模型服务商。
 
 ## 技术栈
 
@@ -8,7 +8,7 @@
 - 后端：FastAPI、SQLAlchemy、Alembic、SQLite / PostgreSQL
 - 后台任务：本地导入 Worker 或 Celery + Redis
 - 文档解析：pypdf、python-docx
-- 管理员账户：admin，admin101
+- 管理员账户：admin，admin101（开发环境默认；生产环境须设置 ADMIN_PASSWORD 环境变量）
 
 ## 环境要求
 
@@ -86,6 +86,23 @@ npm run dev
 - API 文档：`http://localhost:8000/docs`
 
 Vite 开发服务器会将 `/api` 请求代理到 `8000` 端口的后端。
+
+## 生产环境安全
+
+生产部署时必须设置以下环境变量，应用启动时会校验：
+
+- `JWT_SECRET_KEY` — 不能使用默认值 `change-me-in-development`
+- `API_KEY_ENCRYPTION_SECRET` — 至少 32 字符的随机密钥
+- `ADMIN_PASSWORD` — 管理员密码，不能为空
+- `CORS_ORIGINS` — 不能为 `*`
+
+```dotenv
+APP_ENV=production
+JWT_SECRET_KEY=<生成一个长随机密钥>
+API_KEY_ENCRYPTION_SECRET=<生成一个至少32字符的随机密钥>
+ADMIN_PASSWORD=<设置管理员密码>
+CORS_ORIGINS=https://your-domain.com
+```
 
 ## 模型配置
 
