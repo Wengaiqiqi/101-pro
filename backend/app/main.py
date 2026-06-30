@@ -156,8 +156,7 @@ def create_app() -> FastAPI:
         from app.core.security import decode_access_token
         from jose.exceptions import JWTError as _JWTError
         try:
-            payload = decode_access_token(token)
-            user_id = str(payload.get("sub", ""))
+            decode_access_token(token)
         except _JWTError:
             return JSONResponse(status_code=401, content={"detail": "Invalid token"})
         mime_type = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
