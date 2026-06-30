@@ -89,7 +89,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
             autoComplete={isRegistering ? 'new-password' : 'current-password'}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="至少 8 位"
+            placeholder={isRegistering ? '至少 8 位，含字母和数字' : '输入密码'}
             required
           />
 

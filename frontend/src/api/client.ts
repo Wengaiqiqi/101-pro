@@ -404,6 +404,15 @@ function readErrorMessage(detail: unknown, fallback: string): string {
     if (typeof nested === 'string') {
       return nested;
     }
+    // Pydantic validation errors: {detail: [{msg: "..."}, ...]}
+    if (Array.isArray(nested) && nested.length > 0) {
+      return nested.map((err: { msg?: string }) => err.msg || '').filter(Boolean).join('；');
+    }
+  }
+
+  // Direct Pydantic validation error array: [{msg: "..."}, ...]
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((err: { msg?: string }) => err.msg || '').filter(Boolean).join('；');
   }
 
   return fallback || '请求失败';
