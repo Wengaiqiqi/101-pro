@@ -1,8 +1,9 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { batchApproveDrafts, listDrafts, publishDrafts, updateDraft } from '../../api/client';
 import type { ImportedQuestionDraft, ImportJob, QuestionOption } from '../../api/types';
 import { EmptyState } from '../../components/EmptyState';
+import { ErrorAlert } from '../../components/ErrorAlert';
 import { Field } from '../../components/Field';
 import { LatexText } from '../../components/LatexText';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -36,6 +37,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved'>('all');
   const editingDraft = drafts.find((item) => item.id === editingId);
   const answerRequired = editingDraft ? requiresAnswer(editingDraft.question_type) : true;
 
@@ -124,7 +126,12 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
       await publishDrafts(job.id);
       onPublished();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '发布失败');
+      const message = caught instanceof Error ? caught.message : '发布失败';
+      setError(message);
+      // If there are still pending drafts, suggest filtering to them
+      if (pendingDrafts.length > 0 && filterStatus !== 'pending') {
+        setError(message + ' — 点击下方「待审核」筛选未完成的草稿');
+      }
     } finally {
       setIsPublishing(false);
     }
@@ -153,6 +160,11 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   const approvedCount = drafts.filter((draft) => draft.status === 'approved').length;
   const pendingDrafts = drafts.filter((draft) => draft.status === 'pending');
   const [isApprovingAll, setIsApprovingAll] = useState(false);
+
+  const filteredDrafts = useMemo(() => {
+    if (filterStatus === 'all') return drafts;
+    return drafts.filter((d) => d.status === filterStatus);
+  }, [drafts, filterStatus]);
 
   async function handleApproveAll() {
     setIsApprovingAll(true);
@@ -187,9 +199,36 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
 
       {error ? (
         <div className="mx-4 mt-3 px-3 py-2.5 border border-orange-300 rounded-lg text-amber-800 bg-orange-50" role="alert">
-          {error}
+          <span>{error}</span>
+          {pendingDrafts.length > 0 && filterStatus !== 'pending' && (
+            <button
+              className="ml-3 underline font-bold hover:text-amber-900"
+              type="button"
+              onClick={() => { setFilterStatus('pending'); setError(null); }}
+            >
+              查看待审核
+            </button>
+          )}
         </div>
       ) : null}
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 px-4 pt-3">
+        {(['all', 'pending', 'approved'] as const).map((status) => (
+          <button
+            key={status}
+            type="button"
+            className={`px-3 py-1.5 rounded-md text-[13px] font-bold transition-all ${
+              filterStatus === status
+                ? 'bg-teal-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+            onClick={() => setFilterStatus(status)}
+          >
+            {status === 'all' ? `全部 (${drafts.length})` : status === 'pending' ? `待审核 (${pendingDrafts.length})` : `已通过 (${approvedCount})`}
+          </button>
+        ))}
+      </div>
 
       {/* Edit Modal */}
       {editingId && editingDraft && (
@@ -284,7 +323,10 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
 
       {drafts.length ? (
         <>
-          <div className="overflow-x-auto">
+          {filteredDrafts.length === 0 ? (
+            <div className="py-10 text-center text-[13px] text-slate-400">该分类下暂无草稿</div>
+          ) : (
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
@@ -298,7 +340,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
                 </tr>
               </thead>
               <tbody>
-                {drafts.map((draft) => (
+                {filteredDrafts.map((draft) => (
                   <tr key={draft.id} className="hover:bg-slate-50">
                     <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700 max-w-[300px]"><LatexText text={draft.stem} /></td>
                     <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700">{draft.question_type}</td>
@@ -334,7 +376,8 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          )}
           <div className="flex items-center justify-between gap-4 px-4 py-3.5 border-t border-slate-100">
             <div className="flex items-center gap-3">
               {pendingDrafts.length > 0 && (
