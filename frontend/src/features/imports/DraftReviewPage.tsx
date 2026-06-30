@@ -217,6 +217,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   }, [drafts, filterStatus, pendingDrafts, problematicDrafts]);
 
   const counts = { all: drafts.length, pending: pendingDrafts.length, approved: approvedCount, problematic: problematicDrafts.length };
+  const allPublished = drafts.length > 0 && pendingDrafts.length === 0;
 
   // ── Render ──
   return (
@@ -276,8 +277,9 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
           )}
           <button
             className="inline-flex items-center justify-center gap-2 min-h-[36px] px-4 rounded-lg border border-teal-600 bg-teal-600 text-white text-[13px] font-bold hover:bg-teal-700 disabled:opacity-60"
-            type="button" disabled={isPublishing}
+            type="button" disabled={isPublishing || allPublished}
             onClick={handlePublish}
+            title={allPublished ? '所有题目已发布' : undefined}
           >
             {isPublishing ? '发布中...' : '发布到题库'}
           </button>
