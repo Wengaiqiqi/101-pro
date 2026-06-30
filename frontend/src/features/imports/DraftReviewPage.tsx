@@ -157,6 +157,8 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
     setError(null);
     try {
       await publishDrafts(job.id);
+      const items = await listDrafts(job.id);
+      setDrafts(items);
       onPublished();
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : '发布失败';
@@ -217,7 +219,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   }, [drafts, filterStatus, pendingDrafts, problematicDrafts]);
 
   const counts = { all: drafts.length, pending: pendingDrafts.length, approved: approvedCount, problematic: problematicDrafts.length };
-  const allPublished = drafts.length > 0 && pendingDrafts.length === 0;
+  const allPublished = drafts.length > 0 && drafts.every((d) => d.status === 'published');
 
   // ── Render ──
   return (
