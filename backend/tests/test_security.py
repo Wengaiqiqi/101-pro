@@ -8,7 +8,7 @@ from app.core.security import (
     verify_password,
 )
 from app.services.llm_client import _normalize_page_question
-from app.services.model_settings_service import _validate_base_url
+from app.core.validators import validate_base_url
 from jose.exceptions import JWTError
 
 
@@ -78,4 +78,4 @@ def test_model_base_url_rejects_hostnames_resolving_to_loopback(monkeypatch, url
     )
 
     with pytest.raises(Exception, match="内部|私有"):
-        _validate_base_url(url)
+        validate_base_url(url)

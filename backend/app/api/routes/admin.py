@@ -4,11 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_admin_user, get_db
 from app.core.exceptions import BadRequestError, NotFoundError
-from app.core.validators import validate_password_strength
+from app.core.validators import validate_base_url, validate_password_strength
 from app.models.global_settings import GlobalSettings
 from app.services.model_settings_service import (
     ResolvedModelConfig,
-    _validate_base_url,
     decrypt_api_key,
     encrypt_api_key,
     test_model_connection,
@@ -130,7 +129,7 @@ def update_global_settings(
         updates["model_provider"] = payload.model_provider.strip()
     if payload.model_base_url is not None:
         base_url = payload.model_base_url.strip().rstrip("/")
-        _validate_base_url(base_url)
+        validate_base_url(base_url)
         updates["model_base_url"] = base_url
     if payload.model_name is not None:
         updates["model_name"] = payload.model_name.strip()

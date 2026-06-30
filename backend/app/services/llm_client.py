@@ -35,7 +35,9 @@ class LLMConfig:
 def _coerce_llm_bool(value: object) -> bool:
     if isinstance(value, bool):
         return value
-    raise ValueError("LLM boolean fields must be JSON booleans")
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    raise ValueError("LLM boolean fields must be JSON booleans (true/false) or integers (0/1)")
 
 
 def _strip_code_fences(text: str) -> str:
@@ -415,6 +417,9 @@ def generate_question_drafts(
     text: str,
     generation_config: dict[str, object],
 ) -> list[dict[str, object]]:
+    from app.core.validators import validate_base_url
+
+    validate_base_url(config.base_url)
     http = _get_http_client()
     if http is None:
         raise RuntimeError("httpx is required to generate question drafts")
@@ -478,6 +483,10 @@ def _call_llm_for_grading(config: LLMConfig, prompt: str) -> dict[str, object]:
     Returns:
         dict with "correct" (bool) and "feedback" (str)
     """
+    from app.core.validators import validate_base_url
+
+    validate_base_url(config.base_url)
+
     http = _get_http_client()
     if http is None:
         return {"correct": False, "feedback": "无法评判（缺少 httpx）"}

@@ -16,10 +16,12 @@ class RateLimiter:
         self._lock = Lock()
 
     def _clean_old_requests(self, key: str, window_seconds: int):
-        """Remove requests older than the window."""
+        """Remove requests older than the window and delete empty keys."""
         now = time.time()
         cutoff = now - window_seconds
         self._requests[key] = [ts for ts in self._requests[key] if ts > cutoff]
+        if not self._requests[key]:
+            del self._requests[key]
 
     def is_rate_limited(self, key: str, max_requests: int, window_seconds: int) -> bool:
         """Check if the key has exceeded the rate limit."""
@@ -55,6 +57,17 @@ _rate_limiter = RateLimiter()
 _rate_limit_disabled = os.environ.get("DISABLE_RATE_LIMIT", "").lower() in ("1", "true", "yes")
 
 
+def _get_client_ip(request: Request) -> str:
+    """Get the real client IP, preferring X-Forwarded-For behind proxies."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        # Take the leftmost IP (original client).
+        client_ip = forwarded.split(",")[0].strip()
+        if client_ip:
+            return client_ip
+    return request.client.host if request.client else "unknown"
+
+
 def check_rate_limit(request: Request, max_requests: int = 5, window_seconds: int = 300):
     """
     FastAPI dependency to check rate limit based on client IP and endpoint.
@@ -71,7 +84,7 @@ def check_rate_limit(request: Request, max_requests: int = 5, window_seconds: in
     if _rate_limit_disabled:
         return
 
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_client_ip(request)
     endpoint = request.url.path
     key = f"{client_ip}:{endpoint}"
 

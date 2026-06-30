@@ -13,24 +13,36 @@ export function PublicBanksPage() {
   const [error, setError] = useState<string | null>(null);
   const [forkingId, setForkingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hasMore, setHasMore] = useState(true);
+  const pageSize = 24;
 
   useEffect(() => {
     let isMounted = true;
-    loadBanks(isMounted);
+    loadBanks(isMounted, 0);
     return () => { isMounted = false; };
   }, []);
 
-  async function loadBanks(isMounted: boolean) {
+  async function loadBanks(isMounted: boolean, skip: number) {
     setIsLoading(true);
     setError(null);
     try {
-      const items = await listPublicBanks(0, 100);
-      if (isMounted) setBanks(items);
+      const items = await listPublicBanks(skip, pageSize);
+      if (!isMounted) return;
+      if (skip === 0) {
+        setBanks(items);
+      } else {
+        setBanks((prev) => [...prev, ...items]);
+      }
+      setHasMore(items.length === pageSize);
     } catch (caught) {
       if (isMounted) setError(caught instanceof Error ? caught.message : '加载失败');
     } finally {
       if (isMounted) setIsLoading(false);
     }
+  }
+
+  function handleLoadMore() {
+    loadBanks(true, banks.length);
   }
 
   async function handleFork(bankId: number) {
@@ -88,56 +100,70 @@ export function PublicBanksPage() {
           />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredBanks.map((bank) => (
-            <div
-              key={bank.id}
-              className="bg-white rounded-xl shadow-sm border border-black/[0.06] overflow-hidden hover:shadow-md transition-shadow"
-            >
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <h3 className="m-0 text-[15px] font-bold text-black leading-tight line-clamp-2 flex-1">
-                    {bank.name}
-                  </h3>
-                  <span className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-zinc-100 text-[11px] font-semibold text-zinc-600">
-                    <BookOpen size={12} />
-                    {bank.question_count ?? 0}
-                  </span>
-                </div>
-                {bank.description && (
-                  <p className="text-[13px] text-zinc-500 leading-relaxed line-clamp-2 mb-3">
-                    {bank.description}
-                  </p>
-                )}
-                <div className="flex items-center gap-2 text-[12px] text-zinc-400">
-                  {bank.owner_avatar_url ? (
-                    <img src={bank.owner_avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
-                  ) : (
-                    <div className="flex items-center justify-center w-5 h-5 rounded-full bg-zinc-100">
-                      <User size={10} className="text-zinc-500" />
-                    </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredBanks.map((bank) => (
+              <div
+                key={bank.id}
+                className="bg-white rounded-xl shadow-sm border border-black/[0.06] overflow-hidden hover:shadow-md transition-shadow"
+              >
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <h3 className="m-0 text-[15px] font-bold text-black leading-tight line-clamp-2 flex-1">
+                      {bank.name}
+                    </h3>
+                    <span className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-zinc-100 text-[11px] font-semibold text-zinc-600">
+                      <BookOpen size={12} />
+                      {bank.question_count ?? 0}
+                    </span>
+                  </div>
+                  {bank.description && (
+                    <p className="text-[13px] text-zinc-500 leading-relaxed line-clamp-2 mb-3">
+                      {bank.description}
+                    </p>
                   )}
-                  <span className="truncate">{bank.owner_nickname || '匿名用户'}</span>
+                  <div className="flex items-center gap-2 text-[12px] text-zinc-400">
+                    {bank.owner_avatar_url ? (
+                      <img src={bank.owner_avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex items-center justify-center w-5 h-5 rounded-full bg-zinc-100">
+                        <User size={10} className="text-zinc-500" />
+                      </div>
+                    )}
+                    <span className="truncate">{bank.owner_nickname || '匿名用户'}</span>
+                  </div>
+                </div>
+                <div className="px-5 py-3 border-t border-black/[0.04] bg-zinc-50/50">
+                  <button
+                    type="button"
+                    disabled={forkingId === bank.id}
+                    onClick={() => void handleFork(bank.id)}
+                    className="w-full inline-flex items-center justify-center gap-2 h-[36px] rounded-lg border border-black/[0.1] bg-white text-[13px] font-semibold text-black hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    {forkingId === bank.id ? (
+                      <span className="animate-spin w-4 h-4 border-2 border-zinc-300 border-t-black rounded-full" />
+                    ) : (
+                      <Copy size={14} />
+                    )}
+                    {forkingId === bank.id ? '复制中...' : '获取此题库'}
+                  </button>
                 </div>
               </div>
-              <div className="px-5 py-3 border-t border-black/[0.04] bg-zinc-50/50">
-                <button
-                  type="button"
-                  disabled={forkingId === bank.id}
-                  onClick={() => void handleFork(bank.id)}
-                  className="w-full inline-flex items-center justify-center gap-2 h-[36px] rounded-lg border border-black/[0.1] bg-white text-[13px] font-semibold text-black hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                >
-                  {forkingId === bank.id ? (
-                    <span className="animate-spin w-4 h-4 border-2 border-zinc-300 border-t-black rounded-full" />
-                  ) : (
-                    <Copy size={14} />
-                  )}
-                  {forkingId === bank.id ? '复制中...' : '获取此题库'}
-                </button>
-              </div>
+            ))}
+          </div>
+          {hasMore && !searchQuery && (
+            <div className="flex justify-center pt-4">
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={handleLoadMore}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg border border-black/[0.1] bg-white text-[14px] font-semibold text-black hover:bg-zinc-50 disabled:opacity-50 transition-all"
+              >
+                {isLoading ? '加载中...' : '加载更多'}
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

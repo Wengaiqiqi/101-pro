@@ -1,13 +1,11 @@
 import base64
 import hashlib
 import logging
-import ipaddress
-import socket
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet
 from app.core.exceptions import BadRequestError
+from app.core.validators import validate_base_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,43 +25,6 @@ class ResolvedModelConfig:
     base_url: str
     model: str
     api_key: str
-
-
-def _validate_base_url(url: str) -> None:
-    """Validate that base_url is not targeting internal/private networks."""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise BadRequestError("URL 必须使用 http 或 https 协议")
-    hostname = (parsed.hostname or "").rstrip(".").lower()
-    if not hostname:
-        raise BadRequestError("URL 缺少有效主机名")
-    # Block localhost and common internal addresses
-    blocked = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
-    if hostname in blocked:
-        raise BadRequestError("不允许访问内部网络地址")
-    addresses: set[str] = set()
-    try:
-        addresses.add(str(ipaddress.ip_address(hostname)))
-    except ValueError:
-        try:
-            for info in socket.getaddrinfo(hostname, parsed.port or 443, type=socket.SOCK_STREAM):
-                addresses.add(info[4][0])
-        except socket.gaierror:
-            # Connection handling will report an unreachable provider. If it resolves
-            # later, this validation runs again immediately before model use.
-            return
-
-    for address in addresses:
-        ip = ipaddress.ip_address(address)
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
-            raise BadRequestError("不允许访问内部或私有网络地址")
 
 
 _fernet_instance: Fernet | None = None
@@ -143,7 +104,7 @@ def save_model_settings(db: Session, user: User, payload: ModelSettingsUpdate) -
         user_settings = UserModelSettings(user_id=user.id)
         db.add(user_settings)
 
-    _validate_base_url(payload.base_url.strip())
+    validate_base_url(payload.base_url.strip())
     user_settings.provider = payload.provider.strip()
     user_settings.base_url = payload.base_url.strip().rstrip("/")
     user_settings.model = payload.model.strip()
@@ -170,7 +131,7 @@ def save_model_settings(db: Session, user: User, payload: ModelSettingsUpdate) -
 def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
     user_settings = db.scalar(select(UserModelSettings).where(UserModelSettings.user_id == user.id))
     if user_settings is not None and user_settings.encrypted_api_key:
-        _validate_base_url(user_settings.base_url)
+        validate_base_url(user_settings.base_url)
         return ResolvedModelConfig(
             provider=user_settings.provider,
             base_url=user_settings.base_url,
@@ -190,7 +151,7 @@ def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
 
         if decrypted:
             global_base_url = global_settings.get("model_base_url", "")
-            _validate_base_url(global_base_url)
+            validate_base_url(global_base_url)
             return ResolvedModelConfig(
                 provider=global_settings.get("model_provider", ""),
                 base_url=global_base_url,
@@ -200,7 +161,7 @@ def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
 
     settings = get_settings()
     if settings.model_api_key:
-        _validate_base_url(settings.model_base_url)
+        validate_base_url(settings.model_base_url)
         return ResolvedModelConfig(
             provider=settings.model_provider,
             base_url=settings.model_base_url,
@@ -212,7 +173,7 @@ def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
 
 
 def test_model_connection(config: ResolvedModelConfig) -> dict[str, object]:
-    _validate_base_url(config.base_url)
+    validate_base_url(config.base_url)
     llm_config = LLMConfig(
         provider=config.provider,
         base_url=config.base_url,

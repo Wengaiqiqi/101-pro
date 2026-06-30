@@ -156,7 +156,8 @@ async function listAllQuestions(path: string): Promise<Question[]> {
   const questions: Question[] = [];
 
   for (let skip = 0; ; skip += pageSize) {
-    const items = await apiRequest<unknown[]>(`${path}?skip=${skip}&limit=${pageSize}`);
+    const params = new URLSearchParams({ skip: String(skip), limit: String(pageSize) });
+    const items = await apiRequest<unknown[]>(`${path}?${params.toString()}`);
     questions.push(...items.map(normalizeQuestion));
     if (items.length < pageSize) return questions;
   }
@@ -369,7 +370,8 @@ export async function uploadAvatar(file: File): Promise<User> {
 // ── Public Banks (Explore) ────────────────────────────────────────
 
 export async function listPublicBanks(skip: number = 0, limit: number = 50): Promise<QuestionBank[]> {
-  const items = await apiRequest<unknown[]>(`/api/question-banks/public?skip=${skip}&limit=${limit}`);
+  const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
+  const items = await apiRequest<unknown[]>(`/api/question-banks/public?${params.toString()}`);
   return items.map(normalizeBank);
 }
 
