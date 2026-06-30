@@ -53,7 +53,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
       
       {/* Sidebar */}
       <aside 
-        className="flex flex-col gap-6 bg-[#FDFDFD]/80 backdrop-blur-3xl border-r border-black/[0.06] max-md:hidden relative z-40" 
+        className="sticky top-0 h-screen overflow-y-auto flex flex-col gap-6 bg-[#FDFDFD]/80 backdrop-blur-3xl border-r border-black/[0.06] max-md:hidden relative z-40" 
         aria-label="主导航"
       >
         <div className="flex items-center gap-3 px-6 pt-8 pb-2">
