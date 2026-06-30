@@ -402,17 +402,17 @@ function readErrorMessage(detail: unknown, fallback: string): string {
   if (detail && typeof detail === 'object' && 'detail' in detail) {
     const nested = (detail as { detail?: unknown }).detail;
     if (typeof nested === 'string') {
-      return nested;
+      return nested.replace(/^Value error, /, '');
     }
     // Pydantic validation errors: {detail: [{msg: "..."}, ...]}
     if (Array.isArray(nested) && nested.length > 0) {
-      return nested.map((err: { msg?: string }) => err.msg || '').filter(Boolean).join('；');
+      return nested.map((err: { msg?: string }) => (err.msg || '').replace(/^Value error, /, '')).filter(Boolean).join('；');
     }
   }
 
   // Direct Pydantic validation error array: [{msg: "..."}, ...]
   if (Array.isArray(detail) && detail.length > 0) {
-    return detail.map((err: { msg?: string }) => err.msg || '').filter(Boolean).join('；');
+    return detail.map((err: { msg?: string }) => (err.msg || '').replace(/^Value error, /, '')).filter(Boolean).join('；');
   }
 
   return fallback || '请求失败';
