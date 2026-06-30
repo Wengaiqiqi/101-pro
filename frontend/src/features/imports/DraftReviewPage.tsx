@@ -26,6 +26,26 @@ function requiresAnswer(questionType: string): boolean {
   return ANSWER_REQUIRED_TYPES.has(questionType);
 }
 
+function draftNeedsWork(draft: ImportedQuestionDraft): boolean {
+  // Choice questions: no options, no correct option, or empty answer
+  if (isChoiceQuestion(draft.question_type)) {
+    if (!draft.options || draft.options.length === 0) return true;
+    if (!draft.options.some((o) => o.is_correct)) return true;
+    if (!draft.answer_text || draft.answer_text === '—') return true;
+    // Answer labels must match option labels
+    const labels = new Set(draft.options.map((o) => String(o.label ?? '')));
+    const answerLabels = draft.answer_text.split(/[\s|,]+/).filter(Boolean);
+    if (answerLabels.length === 0) return true;
+    if (!answerLabels.every((l) => labels.has(l))) return true;
+    return false;
+  }
+  // Non-choice questions that require answer but have none
+  if (requiresAnswer(draft.question_type) && (!draft.answer_text || draft.answer_text === '—')) {
+    return true;
+  }
+  return false;
+}
+
 export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   const navigate = useNavigate();
   const [drafts, setDrafts] = useState<ImportedQuestionDraft[]>([]);
@@ -37,7 +57,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'needs_work'>('all');
   const editingDraft = drafts.find((item) => item.id === editingId);
   const answerRequired = editingDraft ? requiresAnswer(editingDraft.question_type) : true;
 
@@ -129,8 +149,8 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
       const message = caught instanceof Error ? caught.message : '发布失败';
       setError(message);
       // If there are still pending drafts, suggest filtering to them
-      if (pendingDrafts.length > 0 && filterStatus !== 'pending') {
-        setError(message + ' — 点击下方「待审核」筛选未完成的草稿');
+      if (needsWorkDrafts.length > 0 && filterStatus !== 'needs_work') {
+        setError(message + ' — 点击下方「待处理」查看有问题的草稿');
       }
     } finally {
       setIsPublishing(false);
@@ -161,10 +181,13 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
   const pendingDrafts = drafts.filter((draft) => draft.status === 'pending');
   const [isApprovingAll, setIsApprovingAll] = useState(false);
 
+  const needsWorkDrafts = useMemo(() => drafts.filter(draftNeedsWork), [drafts]);
+
   const filteredDrafts = useMemo(() => {
     if (filterStatus === 'all') return drafts;
+    if (filterStatus === 'needs_work') return needsWorkDrafts;
     return drafts.filter((d) => d.status === filterStatus);
-  }, [drafts, filterStatus]);
+  }, [drafts, filterStatus, needsWorkDrafts]);
 
   async function handleApproveAll() {
     setIsApprovingAll(true);
@@ -200,34 +223,61 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
       {error ? (
         <div className="mx-4 mt-3 px-3 py-2.5 border border-orange-300 rounded-lg text-amber-800 bg-orange-50" role="alert">
           <span>{error}</span>
-          {pendingDrafts.length > 0 && filterStatus !== 'pending' && (
+          {needsWorkDrafts.length > 0 && filterStatus !== 'needs_work' && (
             <button
               className="ml-3 underline font-bold hover:text-amber-900"
               type="button"
-              onClick={() => { setFilterStatus('pending'); setError(null); }}
+              onClick={() => { setFilterStatus('needs_work'); setError(null); }}
             >
-              查看待审核
+              查看待处理
             </button>
           )}
         </div>
       ) : null}
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2 px-4 pt-3">
-        {(['all', 'pending', 'approved'] as const).map((status) => (
+      {/* Sticky Filter Bar */}
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-4 py-2.5 bg-white/95 backdrop-blur-sm border-b border-slate-100">
+        <div className="flex gap-2">
+          {([
+            ['all', `全部 (${drafts.length})`],
+            ['pending', `待审核 (${pendingDrafts.length})`],
+            ['needs_work', `待处理 (${needsWorkDrafts.length})`],
+            ['approved', `已通过 (${approvedCount})`],
+          ] as const).map(([status, label]) => (
+            <button
+              key={status}
+              type="button"
+              className={`px-3 py-1.5 rounded-md text-[13px] font-bold whitespace-nowrap transition-all ${
+                filterStatus === status
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              onClick={() => setFilterStatus(status)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          {pendingDrafts.length > 0 && (
+            <button
+              className="inline-flex items-center justify-center gap-1.5 min-h-[34px] px-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-[12px] font-bold hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+              type="button"
+              disabled={isApprovingAll}
+              onClick={() => void handleApproveAll()}
+            >
+              {isApprovingAll ? '审核中...' : `一键通过 (${pendingDrafts.length})`}
+            </button>
+          )}
           <button
-            key={status}
+            className="inline-flex items-center justify-center gap-1.5 min-h-[34px] px-3 rounded-lg border border-teal-600 bg-teal-600 text-white text-[12px] font-bold hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed"
             type="button"
-            className={`px-3 py-1.5 rounded-md text-[13px] font-bold transition-all ${
-              filterStatus === status
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-            onClick={() => setFilterStatus(status)}
+            disabled={isPublishing}
+            onClick={handlePublish}
           >
-            {status === 'all' ? `全部 (${drafts.length})` : status === 'pending' ? `待审核 (${pendingDrafts.length})` : `已通过 (${approvedCount})`}
+            {isPublishing ? '发布中...' : '发布到题库'}
           </button>
-        ))}
+        </div>
       </div>
 
       {/* Edit Modal */}
@@ -379,29 +429,9 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
             </div>
           )}
           <div className="flex items-center justify-between gap-4 px-4 py-3.5 border-t border-slate-100">
-            <div className="flex items-center gap-3">
-              {pendingDrafts.length > 0 && (
-                <button
-                  className="inline-flex items-center justify-center gap-2 min-h-[38px] px-4 rounded-lg border border-slate-300 bg-white text-slate-700 text-[13px] font-bold hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
-                  type="button"
-                  disabled={isApprovingAll}
-                  onClick={() => void handleApproveAll()}
-                >
-                  {isApprovingAll ? '审核中...' : `一键全部通过 (${pendingDrafts.length})`}
-                </button>
-              )}
-              <span className="text-[12px] text-slate-400">
-                已通过 {approvedCount} / {drafts.length}
-              </span>
-            </div>
-            <button
-              className="inline-flex items-center justify-center gap-2 min-h-[38px] px-4 rounded-lg border border-teal-600 bg-teal-600 text-white text-[13px] font-bold hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed"
-              type="button"
-              disabled={isPublishing}
-              onClick={handlePublish}
-            >
-              {isPublishing ? '发布中...' : '发布到题库'}
-            </button>
+            <span className="text-[12px] text-slate-400">
+              已通过 {approvedCount} / {drafts.length}{needsWorkDrafts.length > 0 ? ` · 待处理 ${needsWorkDrafts.length}` : ''}
+            </span>
           </div>
         </>
       ) : (
