@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Copy, Download, Library, Search, User } from 'lucide-react';
+import { BookOpen, Copy, Library, Search, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { QuestionBank } from '../../api/types';
 import { forkBank, listPublicBanks } from '../../api/client';

@@ -121,13 +121,13 @@ export async function listQuestionBanks(): Promise<QuestionBank[]> {
 }
 
 export function createQuestionBank(payload: QuestionBankCreate): Promise<QuestionBank> {
-  return apiRequest<QuestionBank>('/api/question-banks', {
+  return apiRequest<unknown>('/api/question-banks', {
     method: 'POST',
     body: JSON.stringify({
       description: '',
       ...payload
     })
-  });
+  }).then(normalizeBank);
 }
 
 export function updateQuestionBank(bankId: number, payload: { name?: string; description?: string; visibility?: string }): Promise<QuestionBank> {

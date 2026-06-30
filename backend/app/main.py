@@ -153,9 +153,12 @@ def create_app() -> FastAPI:
         if not token:
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
         # Verify token
-        from app.core.security import verify_token
-        user_id = verify_token(token)
-        if user_id is None:
+        from app.core.security import decode_access_token
+        from jose.exceptions import JWTError as _JWTError
+        try:
+            payload = decode_access_token(token)
+            user_id = str(payload.get("sub", ""))
+        except _JWTError:
             return JSONResponse(status_code=401, content={"detail": "Invalid token"})
         mime_type = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
         return FileResponse(str(full_path), media_type=mime_type)

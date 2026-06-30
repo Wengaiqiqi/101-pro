@@ -81,8 +81,6 @@ export function WrongQuestionsPage({ banks, wrongQuestions, onChanged }: WrongQu
       if (failedIds.length > 0) {
         setError(`${failedIds.length} 项标记失败，其余已成功`);
       }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '批量标记失败');
     } finally {
       setIsBatchMastering(false);
     }
