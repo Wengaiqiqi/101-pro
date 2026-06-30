@@ -177,8 +177,8 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
       </div>
       
       {/* Mobile Bottom Nav */}
-      <div className="md:hidden fixed bottom-0 left-0 w-full z-50 bg-white/80 backdrop-blur-xl border-t border-black/[0.06] flex items-center justify-around px-2 py-2 pb-safe">
-         {navItems.slice(0, 5).map((item) => (
+      <div className="md:hidden fixed bottom-0 left-0 w-full z-50 bg-white/80 backdrop-blur-xl border-t border-black/[0.06] flex items-center justify-around px-1 py-2 pb-safe">
+         {navItems.filter((item) => ['工作台', '题库管理', '专属练习', '错题复盘', '题集广场', '个人设置'].includes(item.label)).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
