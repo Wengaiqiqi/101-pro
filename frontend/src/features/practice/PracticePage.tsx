@@ -277,8 +277,7 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
                     question={question}
                     answer={currentAnswer ?? ''}
                     onChange={(value) => {
-                      if (!isExamMode && !isRevealed && (question.question_type === 'single_choice' || question.question_type === 'true_false')) {
-                        // Single-choice answers are complete after one selection.
+                      if (!isExamMode && !isRevealed) {
                         void handleAutoReveal(question, value);
                       } else {
                         setAnswerForQuestion(question.id, value);
@@ -293,18 +292,6 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
                     revealed={isRevealed}
                     submitted={submitted}
                   />
-                  {!isExamMode && !isRevealed && question.question_type === 'multiple_choice' && (
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        type="button"
-                        className="inline-flex items-center justify-center h-[36px] px-4 rounded-md bg-black text-white text-[13px] font-semibold hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!hasAnswer(currentAnswer) || submittingRef.current.has(question.id)}
-                        onClick={() => void handleAutoReveal(question, currentAnswer!)}
-                      >
-                        确认答案
-                      </button>
-                    </div>
-                  )}
                 </div>
               </article>
             );

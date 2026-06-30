@@ -166,18 +166,17 @@ describe('practice flow', () => {
     });
   });
 
-  it('waits for explicit confirmation before submitting a multiple-choice answer', async () => {
+  it('auto-submits multiple-choice answers on selection', async () => {
     const user = userEvent.setup();
     const multipleChoice: Question = {
       ...question,
       id: 21,
-      stem: '选择两个正确答案',
+      stem: '选择正确答案',
       question_type: 'multiple_choice',
       answer_text: undefined,
       options: [
-        { id: 1, label: 'A', content: '甲', is_correct: false },
+        { id: 1, label: 'A', content: '甲', is_correct: true },
         { id: 2, label: 'B', content: '乙', is_correct: false },
-        { id: 3, label: 'C', content: '丙', is_correct: false },
       ],
     };
     const answerRequests: RequestInit[] = [];
@@ -195,8 +194,8 @@ describe('practice flow', () => {
       if (url === '/api/practice-sessions/31/answers') {
         answerRequests.push(init ?? {});
         return jsonResponse({
-          id: 41, session_id: 31, question_id: 21, user_answer_json: { value: ['A', 'C'] },
-          is_correct: true, correct_option_labels: ['A', 'C'], elapsed_seconds: 0,
+          id: 41, session_id: 31, question_id: 21, user_answer_json: { value: ['A'] },
+          is_correct: true, correct_option_labels: ['A'], elapsed_seconds: 0,
           created_at: '2026-01-03T00:00:01Z',
         }, { status: 201 });
       }
@@ -206,11 +205,12 @@ describe('practice flow', () => {
     render(<PracticePage banks={[bank]} wrongQuestions={[]} onPracticeFinished={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: '开始练习' }));
     await user.click(await screen.findByRole('checkbox', { name: 'A. 甲' }));
-    await user.click(screen.getByRole('checkbox', { name: 'C. 丙' }));
 
-    expect(answerRequests).toHaveLength(0);
-    await user.click(screen.getByRole('button', { name: '确认答案' }));
-    expect(answerRequests).toHaveLength(1);
+    // Selection auto-submits immediately — no "确认答案" button needed
+    await waitFor(() => expect(answerRequests).toHaveLength(1));
+
+    // After submission, checkboxes are disabled (revealed state)
+    expect(screen.queryByRole('button', { name: '确认答案' })).toBeNull();
   });
 
   it('renders true-false questions as choice controls', async () => {
