@@ -124,7 +124,7 @@ def test_page_request_sends_image_text_and_uses_xiaomi_full_modal_model() -> Non
         )
 
     assert captured["model"] == "mimo-v2.5"
-    assert captured["max_tokens"] == 100000
+    assert captured["max_tokens"] == 1000000
     content = captured["messages"][0]["content"]
     assert [part["type"] for part in content] == ["text", "image_url"]
     assert "section 必须使用" in content[0]["text"]

@@ -365,7 +365,7 @@ def generate_page_question_drafts(
                         }
                     ],
                     "temperature": 0,
-                    "max_tokens": 100000,
+                    "max_tokens": 1000000,
                 },
             )
             response.raise_for_status()
@@ -501,7 +501,7 @@ def _call_llm_for_grading(config: LLMConfig, prompt: str) -> dict[str, object]:
                 "model": config.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.1,
-                "max_tokens": 100000,
+                "max_tokens": 1000000,
             },
         )
         logger.debug(f"[AI grading] response status={response.status_code}")
