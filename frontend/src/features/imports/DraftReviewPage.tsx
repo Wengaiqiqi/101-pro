@@ -85,6 +85,15 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
     };
   }, [job.id]);
 
+  const approvedCount = drafts.filter((draft) => draft.status === 'approved').length;
+  const pendingDrafts = drafts.filter((draft) => draft.status === 'pending');
+  const needsWorkDrafts = useMemo(() => drafts.filter(draftNeedsWork), [drafts]);
+  const filteredDrafts = useMemo(() => {
+    if (filterStatus === 'all') return drafts;
+    if (filterStatus === 'needs_work') return needsWorkDrafts;
+    return drafts.filter((d) => d.status === filterStatus);
+  }, [drafts, filterStatus, needsWorkDrafts]);
+
   function startEdit(draft: ImportedQuestionDraft) {
     setEditingId(draft.id);
     setStem(draft.stem);
@@ -177,17 +186,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
     }
   }
 
-  const approvedCount = drafts.filter((draft) => draft.status === 'approved').length;
-  const pendingDrafts = drafts.filter((draft) => draft.status === 'pending');
   const [isApprovingAll, setIsApprovingAll] = useState(false);
-
-  const needsWorkDrafts = useMemo(() => drafts.filter(draftNeedsWork), [drafts]);
-
-  const filteredDrafts = useMemo(() => {
-    if (filterStatus === 'all') return drafts;
-    if (filterStatus === 'needs_work') return needsWorkDrafts;
-    return drafts.filter((d) => d.status === filterStatus);
-  }, [drafts, filterStatus, needsWorkDrafts]);
 
   async function handleApproveAll() {
     setIsApprovingAll(true);
