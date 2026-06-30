@@ -33,6 +33,8 @@ def _validate_unique_options(options: Sequence[QuestionOptionCreate | dict[str, 
 
 
 def list_banks(db: Session, user: User, *, skip: int = 0, limit: int = 100) -> list[dict]:
+    from sqlalchemy.orm import joinedload
+
     count_subq = (
         select(func.count())
         .where(Question.bank_id == QuestionBank.id)
@@ -41,6 +43,7 @@ def list_banks(db: Session, user: User, *, skip: int = 0, limit: int = 100) -> l
     )
     rows = db.execute(
         select(QuestionBank, count_subq.label("question_count"))
+        .options(joinedload(QuestionBank.owner))
         .where(QuestionBank.owner_id == user.id)
         .order_by(QuestionBank.id)
         .offset(skip)
@@ -50,6 +53,34 @@ def list_banks(db: Session, user: User, *, skip: int = 0, limit: int = 100) -> l
     for bank, count in rows:
         data = {c.name: getattr(bank, c.name) for c in bank.__table__.columns}
         data["question_count"] = count or 0
+        data["owner_nickname"] = bank.owner.nickname or bank.owner.username
+        data["owner_avatar_url"] = bank.owner.avatar_url
+        result.append(data)
+    return result
+
+
+def list_public_banks(db: Session, *, skip: int = 0, limit: int = 50) -> list[dict]:
+    from sqlalchemy.orm import joinedload
+    count_subq = (
+        select(func.count())
+        .where(Question.bank_id == QuestionBank.id)
+        .correlate(QuestionBank)
+        .scalar_subquery()
+    )
+    rows = db.execute(
+        select(QuestionBank, count_subq.label("question_count"))
+        .options(joinedload(QuestionBank.owner))
+        .where(QuestionBank.visibility == "public")
+        .order_by(QuestionBank.updated_at.desc())
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    result = []
+    for bank, count in rows:
+        data = {c.name: getattr(bank, c.name) for c in bank.__table__.columns}
+        data["question_count"] = count or 0
+        data["owner_nickname"] = bank.owner.nickname or bank.owner.username
+        data["owner_avatar_url"] = bank.owner.avatar_url
         result.append(data)
     return result
 
@@ -157,3 +188,60 @@ def _get_owned_question(db: Session, user: User, question_id: int) -> Question:
     if question is None:
         raise NotFoundError()
     return question
+
+
+def fork_bank(db: Session, user: User, bank_id: int) -> dict:
+    # Get source bank
+    source_bank = db.scalar(
+        select(QuestionBank)
+        .options(selectinload(QuestionBank.questions).selectinload(Question.options))
+        .where(QuestionBank.id == bank_id, QuestionBank.visibility == "public")
+    )
+    if source_bank is None:
+        raise NotFoundError("题库不存在或未公开")
+
+    if source_bank.owner_id == user.id:
+        raise BadRequestError("不能复制自己的题库")
+
+    # Create new bank
+    new_bank = QuestionBank(
+        owner_id=user.id,
+        name=f"{source_bank.name} (副本)",
+        description=source_bank.description,
+    )
+    db.add(new_bank)
+    db.flush()
+
+    # Copy questions with options in batch
+    for source_question in source_bank.questions:
+        new_question = Question(
+            bank_id=new_bank.id,
+            type=source_question.type,
+            stem=source_question.stem,
+            answer_text=source_question.answer_text,
+            explanation=source_question.explanation,
+            difficulty=source_question.difficulty,
+            tags=source_question.tags,
+            source=source_question.source,
+            options=[
+                QuestionOption(
+                    label=source_option.label,
+                    content=source_option.content,
+                    is_correct=source_option.is_correct,
+                    sort_order=source_option.sort_order,
+                )
+                for source_option in source_question.options
+            ],
+        )
+        db.add(new_question)
+
+    db.commit()
+    db.refresh(new_bank)
+
+    # Return with question count
+    count = db.scalar(select(func.count()).where(Question.bank_id == new_bank.id))
+    data = {c.name: getattr(new_bank, c.name) for c in new_bank.__table__.columns}
+    data["question_count"] = count or 0
+    data["owner_nickname"] = user.nickname or user.username
+    data["owner_avatar_url"] = user.avatar_url
+    return data

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, getMe, getToken, login as apiLogin, setUnauthorizedHandler } from '../api/client';
-import type { LoginPayload, User } from '../api/types';
-import { clearAuthState, persistToken } from '../features/auth/authStore';
+import { ApiError, getMe, getToken, setUnauthorizedHandler } from '../api/client';
+import type { User } from '../api/types';
+import { clearAuthState } from '../features/auth/authStore';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -53,17 +53,10 @@ export function useAuth() {
     return () => setUnauthorizedHandler(null);
   }, [handleUnauthorized]);
 
-  const login = useCallback(async (payload: LoginPayload) => {
-    const token = await apiLogin(payload);
-    persistToken(token.access_token);
-    const currentUser = await getMe();
-    setUser(currentUser);
-  }, []);
-
   const logout = useCallback(() => {
     clearAuthState();
     setUser(null);
   }, []);
 
-  return { user, isBooting, bootError, login, logout, setUser } as const;
+  return { user, isBooting, bootError, logout, setUser } as const;
 }

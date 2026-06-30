@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAuth } from './hooks/useAuth';
 import { useBanks } from './hooks/useBanks';
 import { useImportJob } from './hooks/useImportJob';
@@ -20,6 +22,8 @@ import { QuestionBankListPage } from './features/questionBanks/QuestionBankListP
 import { ModelSettingsPage } from './features/settings/ModelSettingsPage';
 import { AdminUsersPage } from './features/admin/AdminUsersPage';
 import { AdminSettingsPage } from './features/admin/AdminSettingsPage';
+import { PublicBanksPage } from './features/explore/PublicBanksPage';
+import { ProfileSettingsPage } from './features/profile/ProfileSettingsPage';
 import { getImportJob } from './api/client';
 import type { User } from './api/types';
 
@@ -31,19 +35,28 @@ function DashboardWrapper({ user }: { user: User }) {
   const { wrongQuestions } = useWrongQuestions(user.id);
   const { data: activityStats } = useActivityStats(7);
 
+  const sortedJobs = useMemo(
+    () => [...importJobs].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+    [importJobs]
+  );
+  const wrongCount = useMemo(
+    () => wrongQuestions.filter((w) => w.mastery_status !== 'mastered').length,
+    [wrongQuestions]
+  );
+
   return (
     <DashboardPage
       banks={banks}
-      importJobs={[...importJobs].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())}
-      wrongQuestionCount={wrongQuestions.filter((w) => w.mastery_status !== 'mastered').length}
+      importJobs={sortedJobs}
+      wrongQuestionCount={wrongCount}
       activityStats={activityStats}
     />
   );
 }
 
 function BanksListWrapper({ user }: { user: User }) {
-  const { banks, createBank, deleteBank } = useBanks(user.id);
-  return <QuestionBankListPage banks={banks} onCreate={createBank} onDelete={deleteBank} />;
+  const { banks, deleteBank, refreshBanks } = useBanks(user.id);
+  return <QuestionBankListPage banks={banks} onDelete={deleteBank} onBankUpdated={refreshBanks} />;
 }
 
 function BankDetailWrapper({ user }: { user: User }) {
@@ -52,6 +65,10 @@ function BankDetailWrapper({ user }: { user: User }) {
   const { banks, refreshBanks } = useBanks(user.id);
   const { questions, createQuestion, updateQuestion, deleteQuestion } = useQuestions(numericId);
   const bank = banks.find((b) => b.id === numericId);
+
+  if (isNaN(numericId)) {
+    return <Navigate to="/banks" replace />;
+  }
 
   if (!bank) return <div className="px-3 py-2.5 border border-orange-300 rounded-lg text-amber-800 bg-orange-50" role="alert">题库未找到</div>;
 
@@ -62,6 +79,7 @@ function BankDetailWrapper({ user }: { user: User }) {
       onCreateQuestion={async (payload) => { await createQuestion(payload); await refreshBanks(); }}
       onUpdateQuestion={updateQuestion}
       onDeleteQuestion={async (id) => { await deleteQuestion(id); await refreshBanks(); }}
+      onBankUpdated={refreshBanks}
     />
   );
 }
@@ -81,7 +99,13 @@ function NewImportWrapper({ user }: { user: User }) {
 
 function ImportDetailWrapper() {
   const { jobId } = useParams<{ jobId: string }>();
-  const { job, setJob, loading, error } = useImportJob(Number(jobId));
+  const numericId = Number(jobId);
+  const { job, setJob, loading, error } = useImportJob(numericId);
+
+  if (isNaN(numericId)) {
+    return <Navigate to="/imports" replace />;
+  }
+
   if (loading) return <div className="px-3 py-2.5 border border-slate-200 rounded-lg text-slate-500 bg-slate-50">加载中...</div>;
   if (error || !job) return <div className="px-3 py-2.5 border border-orange-300 rounded-lg text-amber-800 bg-orange-50" role="alert">{error ?? '导入任务未找到'}</div>;
   return <ImportJobDetailPage job={job} onJobChange={(j) => setJob(j)} />;
@@ -94,6 +118,11 @@ function DraftReviewWrapper({ user }: { user: User }) {
   const { job, setJob, loading, error } = useImportJob(id);
   const { refreshBanks } = useBanks(user.id);
   const { refreshImports } = useImports(user.id);
+
+  if (isNaN(id)) {
+    return <Navigate to="/imports" replace />;
+  }
+
   if (loading) return <div className="px-3 py-2.5 border border-slate-200 rounded-lg text-slate-500 bg-slate-50">加载中...</div>;
   if (error || !job) return <div className="px-3 py-2.5 border border-orange-300 rounded-lg text-amber-800 bg-orange-50" role="alert">{error ?? '导入任务未找到'}</div>;
   return <DraftReviewPage job={job} onPublished={async () => { await Promise.all([refreshImports(), refreshBanks()]); navigate(`/banks/${job.bank_id}`); }} />;
@@ -109,6 +138,10 @@ function MistakesWrapper({ user }: { user: User }) {
   const { banks } = useBanks(user.id);
   const { wrongQuestions, markMastered } = useWrongQuestions(user.id);
   return <WrongQuestionsPage banks={banks} wrongQuestions={wrongQuestions} onChanged={(w) => markMastered(w.id)} />;
+}
+
+function ProfileWrapper({ user, setUser }: { user: User; setUser: (u: User) => void }) {
+  return <ProfileSettingsPage user={user} onUserUpdated={setUser} />;
 }
 
 // ── App ─────────────────────────────────────────────────────────────
@@ -147,22 +180,26 @@ export function App() {
   return (
     <BrowserRouter>
       <AppShell user={user} onLogout={logout}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardWrapper user={user} />} />
-          <Route path="banks" element={<BanksListWrapper user={user} />} />
-          <Route path="banks/:bankId" element={<BankDetailWrapper user={user} />} />
-          <Route path="imports" element={<ImportsListWrapper user={user} />} />
-          <Route path="imports/new" element={<NewImportWrapper user={user} />} />
-          <Route path="imports/:jobId" element={<ImportDetailWrapper />} />
-          <Route path="imports/:jobId/review" element={<DraftReviewWrapper user={user} />} />
-          <Route path="practice" element={<PracticeWrapper user={user} />} />
-          <Route path="mistakes" element={<MistakesWrapper user={user} />} />
-          <Route path="models" element={<ModelSettingsPage />} />
-          <Route path="admin/users" element={<AdminUsersPage currentUser={user} />} />
-          <Route path="admin/settings" element={<AdminSettingsPage />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardWrapper user={user} />} />
+            <Route path="banks" element={<BanksListWrapper user={user} />} />
+            <Route path="banks/:bankId" element={<BankDetailWrapper user={user} />} />
+            <Route path="imports" element={<ImportsListWrapper user={user} />} />
+            <Route path="imports/new" element={<NewImportWrapper user={user} />} />
+            <Route path="imports/:jobId" element={<ImportDetailWrapper />} />
+            <Route path="imports/:jobId/review" element={<DraftReviewWrapper user={user} />} />
+            <Route path="practice" element={<PracticeWrapper user={user} />} />
+            <Route path="mistakes" element={<MistakesWrapper user={user} />} />
+            <Route path="explore" element={<PublicBanksPage />} />
+            <Route path="models" element={<ModelSettingsPage />} />
+            <Route path="profile" element={<ProfileWrapper user={user} setUser={setUser} />} />
+            <Route path="admin/users" element={<AdminUsersPage currentUser={user} />} />
+            <Route path="admin/settings" element={<AdminSettingsPage />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </AppShell>
     </BrowserRouter>
   );

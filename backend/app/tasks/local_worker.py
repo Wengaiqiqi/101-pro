@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models.import_job import ImportJob
-from app.services.import_service import process_import_job
+from app.services.import_service import JobCancelledError, process_import_job
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,9 @@ def process_next_pending_job(
             return False
         processor(db, int(import_job_id))
         return True
+    except JobCancelledError:
+        logger.info("Import job %s was cancelled, skipping", import_job_id)
+        return True  # Continue processing next job
     finally:
         db.close()
 

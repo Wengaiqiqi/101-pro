@@ -83,7 +83,20 @@ export function ImportJobDetailPage({ job, onJobChange }: ImportJobDetailPagePro
             <tr>
               <th className="px-3.5 py-2.5 border-b border-slate-100 text-left text-xs font-extrabold text-slate-500 bg-slate-50 w-[120px]">状态</th>
               <td className="px-3.5 py-2.5 border-b border-slate-100 text-slate-700">
-                <StatusBadge className={getImportStatusTone(currentJob.status)}>{getImportStatusLabel(currentJob.status)}</StatusBadge>
+                <div className="flex items-center gap-3">
+                  <StatusBadge className={getImportStatusTone(currentJob.status)}>{getImportStatusLabel(currentJob.status)}</StatusBadge>
+                  {activeStatuses.has(currentJob.status) && (
+                    <div className="flex items-center gap-2 flex-1 max-w-[200px]">
+                      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-teal-500 rounded-full transition-all duration-500"
+                          style={{ width: `${currentJob.progress}%` }}
+                        />
+                      </div>
+                      <span className="text-[12px] text-slate-500 font-medium">{currentJob.progress}%</span>
+                    </div>
+                  )}
+                </div>
               </td>
             </tr>
             <tr>

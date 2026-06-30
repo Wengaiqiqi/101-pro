@@ -425,12 +425,13 @@ class TestEvaluateShortAnswerPrompt:
                     "choices": [{"message": {"content": '{"correct": true, "feedback": "回答正确"}'}}]
                 }
 
-        import httpx
+        from app.services import llm_client
 
-        monkeypatch.setattr(
-            httpx, "post",
-            lambda *a, **kw: FakeResponse(),
-        )
+        class FakeClient:
+            def post(self, *args, **kwargs):
+                return FakeResponse()
+
+        monkeypatch.setattr(llm_client, "_get_http_client", lambda: FakeClient())
 
         config = _FakeLLMConfig()
         result = evaluate_short_answer(config, "什么是X？", "X是Y", "X是Y")
@@ -453,12 +454,13 @@ class TestEvaluateShortAnswerPrompt:
                     "choices": [{"message": {"content": '```json\n{"correct": false, "feedback": "答案错误"}\n```'}}]
                 }
 
-        import httpx
+        from app.services import llm_client
 
-        monkeypatch.setattr(
-            httpx, "post",
-            lambda *a, **kw: FakeResponse(),
-        )
+        class FakeClient:
+            def post(self, *args, **kwargs):
+                return FakeResponse()
+
+        monkeypatch.setattr(llm_client, "_get_http_client", lambda: FakeClient())
 
         config = _FakeLLMConfig()
         result = evaluate_short_answer(config, "什么是X？", "X是Y", "完全不对")
@@ -470,11 +472,13 @@ class TestEvaluateShortAnswerPrompt:
         """HTTP error → returns fallback failure message."""
         from app.services.llm_client import evaluate_short_answer
         import httpx
+        from app.services import llm_client
 
-        def _fail_post(*a, **kw):
-            raise httpx.ConnectError("connection refused")
+        class FakeClient:
+            def post(self, *args, **kwargs):
+                raise httpx.ConnectError("connection refused")
 
-        monkeypatch.setattr(httpx, "post", _fail_post)
+        monkeypatch.setattr(llm_client, "_get_http_client", lambda: FakeClient())
 
         config = _FakeLLMConfig()
         result = evaluate_short_answer(config, "什么是X？", "X是Y", "X是Y")
@@ -497,9 +501,13 @@ class TestEvaluateShortAnswerPrompt:
                     "choices": [{"message": {"content": "这不是JSON"}}]
                 }
 
-        import httpx
+        from app.services import llm_client
 
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: FakeResponse())
+        class FakeClient:
+            def post(self, *args, **kwargs):
+                return FakeResponse()
+
+        monkeypatch.setattr(llm_client, "_get_http_client", lambda: FakeClient())
 
         config = _FakeLLMConfig()
         result = evaluate_short_answer(config, "什么是X？", "X是Y", "X是Y")

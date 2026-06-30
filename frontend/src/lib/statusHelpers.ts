@@ -8,6 +8,7 @@ const importStatusLabel: Record<ImportJobStatus, string> = {
   reviewing: '待审核',
   completed: '已完成',
   failed: '失败',
+  cancelled: '已取消',
 };
 
 const importStatusTone: Record<ImportJobStatus, string> = {
@@ -16,6 +17,7 @@ const importStatusTone: Record<ImportJobStatus, string> = {
   reviewing: 'bg-amber-100 text-amber-700',
   completed: 'bg-emerald-100 text-emerald-700',
   failed: 'bg-red-100 text-red-700',
+  cancelled: 'bg-zinc-100 text-zinc-500',
 };
 
 export function getImportStatusLabel(status: ImportJobStatus): string {
@@ -32,6 +34,7 @@ const draftStatusLabel: Record<DraftStatus, string> = {
   pending: '待审核',
   approved: '已通过',
   rejected: '已拒绝',
+  published: '已发布',
 };
 
 export function getDraftStatusLabel(status: DraftStatus): string {
@@ -54,6 +57,7 @@ export function getMasteryStatusLabel(status: MasteryStatus): string {
 const questionTypeLabel: Record<string, string> = {
   single_choice: '单选题',
   multiple_choice: '多选题',
+  true_false: '判断题',
   fill_blank: '填空题',
   short_answer: '简答题',
 };
@@ -65,6 +69,7 @@ export function getQuestionTypeLabel(type: string): string {
 // ── Difficulty ─────────────────────────────────────────────────────
 
 const difficultyLabel: Record<string, string> = {
+  auto: '自动',
   easy: '简单',
   medium: '中等',
   hard: '困难',

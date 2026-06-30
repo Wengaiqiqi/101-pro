@@ -4,8 +4,10 @@ import { listUsers, toggleUserActive, deleteUser, changePassword } from '../../a
 import type { User } from '../../api/types';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { EmptyState } from '../../components/EmptyState';
+import { ErrorAlert } from '../../components/ErrorAlert';
 import { formatDate } from '../../lib/utils';
 import { cn } from '../../lib/utils';
+import { validatePassword } from '../../lib/utils';
 
 interface AdminUsersPageProps {
   currentUser: User;
@@ -29,10 +31,12 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
   const [pwdSuccess, setPwdSuccess] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     listUsers()
-      .then(setUsers)
-      .catch((e) => setError(e instanceof Error ? e.message : '加载失败'))
-      .finally(() => setLoading(false));
+      .then((items) => { if (isMounted) setUsers(items); })
+      .catch((e) => { if (isMounted) setError(e instanceof Error ? e.message : '加载失败'); })
+      .finally(() => { if (isMounted) setLoading(false); });
+    return () => { isMounted = false; };
   }, []);
 
   async function handleToggle(user: User) {
@@ -76,12 +80,10 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
       setPwdError('请填写完整');
       return;
     }
-    if (newPassword.length < 6) {
-      setPwdError('新密码长度不能少于6位');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPwdError('两次输入的新密码不一致');
+
+    const validation = validatePassword(newPassword, confirmPassword);
+    if (!validation.valid) {
+      setPwdError(validation.error!);
       return;
     }
 
@@ -110,12 +112,7 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         <p className="mt-2 text-[14px] text-zinc-500 font-medium">查看、禁用或删除系统用户。</p>
       </header>
 
-      {error && (
-        <div className="px-4 py-3 border border-red-200 rounded-md text-red-700 bg-red-50 flex items-center gap-2" role="alert">
-          <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-          <span className="text-sm font-medium">{error}</span>
-        </div>
-      )}
+      {error && <ErrorAlert message={error} />}
 
       {users.length === 0 ? (
         <div className="py-16 bg-white rounded-xl border border-black/[0.06] shadow-sm">
@@ -129,7 +126,7 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                 <tr className="border-b border-black/[0.06]">
                   <th className="px-6 py-4 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">ID</th>
                   <th className="px-6 py-4 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">用户名</th>
-                  <th className="px-6 py-4 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">邮箱</th>
+                  <th className="px-6 py-4 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">昵称</th>
                   <th className="px-6 py-4 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">角色</th>
                   <th className="px-6 py-4 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">状态</th>
                   <th className="px-6 py-4 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">注册时间</th>
@@ -146,7 +143,7 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         <span className="text-[14px] font-semibold text-black">{user.username}</span>
                         {isSelf && <span className="ml-2 text-[10px] text-zinc-400 font-medium">(当前)</span>}
                       </td>
-                      <td className="px-6 py-4 text-[13px] text-zinc-500">{user.email || '—'}</td>
+                      <td className="px-6 py-4 text-[13px] text-zinc-500">{user.nickname || user.username}</td>
                       <td className="px-6 py-4">
                         <span className={cn(
                           "inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider",
@@ -275,9 +272,7 @@ export function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             />
           </div>
 
-          {pwdError && (
-            <div className="px-3 py-2 border border-red-200 rounded-md text-red-700 bg-red-50 text-sm">{pwdError}</div>
-          )}
+          {pwdError && <ErrorAlert message={pwdError} />}
           {pwdSuccess && (
             <div className="px-3 py-2 border border-emerald-200 rounded-md text-emerald-700 bg-emerald-50 text-sm">{pwdSuccess}</div>
           )}

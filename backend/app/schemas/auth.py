@@ -1,34 +1,23 @@
-from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=80)
-    email: Optional[str] = Field(default=None, max_length=255)
     password: str = Field(min_length=8, max_length=128)
 
-    @field_validator("email")
+    @field_validator("password")
     @classmethod
-    def validate_email(cls, value: Optional[str]) -> Optional[str]:
-        if value is None or value.strip() == "":
-            return None
-        normalized = value.strip().lower()
-        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
-            raise ValueError("Invalid email address")
-        return normalized
+    def validate_password(cls, value: str) -> str:
+        has_letter = any(c.isalpha() for c in value)
+        has_digit = any(c.isdigit() for c in value)
+        if not (has_letter and has_digit):
+            raise ValueError("Password must contain at least one letter and one digit")
+        return value
 
 
 class LoginRequest(BaseModel):
-    username_or_email: str = Field(min_length=1, max_length=255)
+    username: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=128)
-
-    @field_validator("username_or_email")
-    @classmethod
-    def normalize_username_or_email(cls, value: str) -> str:
-        normalized = value.strip()
-        if "@" in normalized:
-            return normalized.lower()
-        return normalized
 
 
 class TokenResponse(BaseModel):

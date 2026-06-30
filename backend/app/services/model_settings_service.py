@@ -1,9 +1,13 @@
 import base64
 import hashlib
+import logging
+import ipaddress
+import socket
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet
-from fastapi import HTTPException, status
+from app.core.exceptions import BadRequestError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +18,8 @@ from app.models.user import User, UserModelSettings
 from app.schemas.model_settings import ModelSettingsResponse, ModelSettingsUpdate
 from app.services.llm_client import LLMConfig
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class ResolvedModelConfig:
@@ -23,10 +29,53 @@ class ResolvedModelConfig:
     api_key: str
 
 
+def _validate_base_url(url: str) -> None:
+    """Validate that base_url is not targeting internal/private networks."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise BadRequestError("URL 必须使用 http 或 https 协议")
+    hostname = (parsed.hostname or "").rstrip(".").lower()
+    if not hostname:
+        raise BadRequestError("URL 缺少有效主机名")
+    # Block localhost and common internal addresses
+    blocked = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
+    if hostname in blocked:
+        raise BadRequestError("不允许访问内部网络地址")
+    addresses: set[str] = set()
+    try:
+        addresses.add(str(ipaddress.ip_address(hostname)))
+    except ValueError:
+        try:
+            for info in socket.getaddrinfo(hostname, parsed.port or 443, type=socket.SOCK_STREAM):
+                addresses.add(info[4][0])
+        except socket.gaierror:
+            # Connection handling will report an unreachable provider. If it resolves
+            # later, this validation runs again immediately before model use.
+            return
+
+    for address in addresses:
+        ip = ipaddress.ip_address(address)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise BadRequestError("不允许访问内部或私有网络地址")
+
+
+_fernet_instance: Fernet | None = None
+
+
 def _fernet() -> Fernet:
-    secret = get_settings().api_key_encryption_secret.encode("utf-8")
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
-    return Fernet(key)
+    global _fernet_instance
+    if _fernet_instance is None:
+        secret = get_settings().api_key_encryption_secret.encode("utf-8")
+        key = base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
+        _fernet_instance = Fernet(key)
+    return _fernet_instance
 
 
 def encrypt_api_key(api_key: str) -> str:
@@ -40,6 +89,14 @@ def decrypt_api_key(encrypted_api_key: str) -> str:
 def _get_global_setting(db: Session, key: str) -> str:
     row = db.scalar(select(GlobalSettings).where(GlobalSettings.key == key))
     return row.value if row else ""
+
+
+def _get_global_settings_batch(db: Session, keys: list[str]) -> dict[str, str]:
+    """Fetch multiple global settings in a single query."""
+    rows = db.execute(
+        select(GlobalSettings).where(GlobalSettings.key.in_(keys))
+    ).scalars().all()
+    return {row.key: row.value for row in rows}
 
 
 def get_model_settings(db: Session, user: User) -> ModelSettingsResponse:
@@ -82,13 +139,11 @@ def save_model_settings(db: Session, user: User, payload: ModelSettingsUpdate) -
     user_settings = db.scalar(select(UserModelSettings).where(UserModelSettings.user_id == user.id))
     if user_settings is None:
         if payload.api_key is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="首次配置需要提供 API Key",
-            )
+            raise BadRequestError("首次配置需要提供 API Key")
         user_settings = UserModelSettings(user_id=user.id)
         db.add(user_settings)
 
+    _validate_base_url(payload.base_url.strip())
     user_settings.provider = payload.provider.strip()
     user_settings.base_url = payload.base_url.strip().rstrip("/")
     user_settings.model = payload.model.strip()
@@ -115,6 +170,7 @@ def save_model_settings(db: Session, user: User, payload: ModelSettingsUpdate) -
 def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
     user_settings = db.scalar(select(UserModelSettings).where(UserModelSettings.user_id == user.id))
     if user_settings is not None and user_settings.encrypted_api_key:
+        _validate_base_url(user_settings.base_url)
         return ResolvedModelConfig(
             provider=user_settings.provider,
             base_url=user_settings.base_url,
@@ -122,22 +178,29 @@ def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
             api_key=decrypt_api_key(user_settings.encrypted_api_key),
         )
 
-    # Fall back to global admin settings
-    global_api_key = _get_global_setting(db, "model_api_key")
+    # Fall back to global admin settings (single batch query)
+    global_settings = _get_global_settings_batch(db, ["model_api_key", "model_provider", "model_base_url", "model_name"])
+    global_api_key = global_settings.get("model_api_key", "")
     if global_api_key:
         try:
             decrypted = decrypt_api_key(global_api_key)
-        except Exception:
-            decrypted = global_api_key
-        return ResolvedModelConfig(
-            provider=_get_global_setting(db, "model_provider"),
-            base_url=_get_global_setting(db, "model_base_url"),
-            model=_get_global_setting(db, "model_name"),
-            api_key=decrypted,
-        )
+        except Exception as e:
+            logger.warning(f"Failed to decrypt global API key: {e}")
+            decrypted = None
+
+        if decrypted:
+            global_base_url = global_settings.get("model_base_url", "")
+            _validate_base_url(global_base_url)
+            return ResolvedModelConfig(
+                provider=global_settings.get("model_provider", ""),
+                base_url=global_base_url,
+                model=global_settings.get("model_name", ""),
+                api_key=decrypted,
+            )
 
     settings = get_settings()
     if settings.model_api_key:
+        _validate_base_url(settings.model_base_url)
         return ResolvedModelConfig(
             provider=settings.model_provider,
             base_url=settings.model_base_url,
@@ -145,13 +208,11 @@ def resolve_model_config(db: Session, user: User) -> ResolvedModelConfig:
             api_key=settings.model_api_key,
         )
 
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="未配置模型 API Key，请先在引擎设置中配置",
-    )
+    raise BadRequestError("未配置模型 API Key，请先在引擎设置中配置")
 
 
 def test_model_connection(config: ResolvedModelConfig) -> dict[str, object]:
+    _validate_base_url(config.base_url)
     llm_config = LLMConfig(
         provider=config.provider,
         base_url=config.base_url,

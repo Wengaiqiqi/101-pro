@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, createImportJob as apiCreateImport, deleteImportJob, listImportJobs } from '../api/client';
+import { createImportJob as apiCreateImport, deleteImportJob, listImportJobs } from '../api/client';
 import type { ImportJob, ImportJobCreate } from '../api/types';
-import { clearAuthState } from '../features/auth/authStore';
 
 export function useImports(userId: number | undefined) {
   const [importJobs, setImportJobs] = useState<ImportJob[]>([]);
@@ -16,10 +15,6 @@ export function useImports(userId: number | undefined) {
       setImportJobs(items);
       setError(null);
     } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 401) {
-        clearAuthState();
-        return;
-      }
       setError(caught instanceof Error ? caught.message : '导入任务加载失败');
     } finally {
       if (!silent) setLoading(false);
@@ -30,16 +25,21 @@ export function useImports(userId: number | undefined) {
     fetchImports();
   }, [fetchImports]);
 
-  // 有进行中的任务时，每3秒静默刷新
+  const hasActiveImports = importJobs.some((job) => job.status === 'pending' || job.status === 'processing');
+
+  // Poll every 3s while there are active (pending/processing) jobs.
   useEffect(() => {
-    const hasActive = importJobs.some((j) => j.status === 'pending' || j.status === 'processing');
-    if (!hasActive) return;
-    const timer = setInterval(() => fetchImports(true), 3000);
+    if (!hasActiveImports) return;
+    const timer = setInterval(() => { void fetchImports(true); }, 3000);
     return () => clearInterval(timer);
-  }, [importJobs, fetchImports]);
+  }, [fetchImports, hasActiveImports]);
 
   const refreshImports = useCallback(async () => {
-    await fetchImports(true);
+    try {
+      await fetchImports(true);
+    } catch {
+      // Error already handled in fetchImports
+    }
   }, [fetchImports]);
 
   const createImport = useCallback(async (payload: ImportJobCreate) => {

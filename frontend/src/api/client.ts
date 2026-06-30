@@ -115,8 +115,9 @@ export function getMe(): Promise<User> {
   return apiRequest<User>('/api/auth/me');
 }
 
-export function listQuestionBanks(): Promise<QuestionBank[]> {
-  return apiRequest<QuestionBank[]>('/api/question-banks');
+export async function listQuestionBanks(): Promise<QuestionBank[]> {
+  const items = await apiRequest<unknown[]>('/api/question-banks');
+  return items.map(normalizeBank);
 }
 
 export function createQuestionBank(payload: QuestionBankCreate): Promise<QuestionBank> {
@@ -129,6 +130,13 @@ export function createQuestionBank(payload: QuestionBankCreate): Promise<Questio
   });
 }
 
+export function updateQuestionBank(bankId: number, payload: { name?: string; description?: string; visibility?: string }): Promise<QuestionBank> {
+  return apiRequest<unknown>(`/api/question-banks/${bankId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }).then(normalizeBank);
+}
+
 export function deleteQuestionBank(bankId: number): Promise<void> {
   return apiRequest<void>(`/api/question-banks/${bankId}`, {
     method: 'DELETE'
@@ -136,8 +144,22 @@ export function deleteQuestionBank(bankId: number): Promise<void> {
 }
 
 export async function listQuestions(bankId: number): Promise<Question[]> {
-  const items = await apiRequest<unknown[]>(`/api/question-banks/${bankId}/questions`);
-  return items.map(normalizeQuestion);
+  return listAllQuestions(`/api/question-banks/${bankId}/questions`);
+}
+
+export async function listPracticeQuestions(bankId: number): Promise<Question[]> {
+  return listAllQuestions(`/api/question-banks/${bankId}/practice-questions`);
+}
+
+async function listAllQuestions(path: string): Promise<Question[]> {
+  const pageSize = 100;
+  const questions: Question[] = [];
+
+  for (let skip = 0; ; skip += pageSize) {
+    const items = await apiRequest<unknown[]>(`${path}?skip=${skip}&limit=${pageSize}`);
+    questions.push(...items.map(normalizeQuestion));
+    if (items.length < pageSize) return questions;
+  }
 }
 
 export function createQuestion(bankId: number, payload: QuestionPayload): Promise<Question> {
@@ -201,6 +223,18 @@ export function updateDraft(draftId: number, payload: ImportedQuestionDraftPaylo
     method: 'PUT',
     body: JSON.stringify(serializeDraftPayload(payload))
   }).then(normalizeDraft);
+}
+
+export interface BatchApproveResponse {
+  approved_count: number;
+  draft_ids: number[];
+}
+
+export function batchApproveDrafts(jobId: number, draftIds?: number[]): Promise<BatchApproveResponse> {
+  return apiRequest<BatchApproveResponse>(`/api/import-jobs/${jobId}/drafts/approve-all`, {
+    method: 'POST',
+    body: JSON.stringify({ draft_ids: draftIds ?? [] })
+  });
 }
 
 export function publishDrafts(jobId: number): Promise<ImportPublishResponse> {
@@ -307,6 +341,44 @@ export function changePassword(payload: ChangePasswordPayload): Promise<{ messag
   });
 }
 
+export function changeMyPassword(payload: { old_password: string; new_password: string }): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/api/users/me/change-password', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+// ── User Profile ──────────────────────────────────────────────────
+
+export function updateProfile(payload: { nickname?: string }): Promise<User> {
+  return apiRequest<User>('/api/users/me', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function uploadAvatar(file: File): Promise<User> {
+  const formData = new FormData();
+  formData.set('file', file);
+  return apiRequest<User>('/api/users/me/avatar', {
+    method: 'POST',
+    body: formData
+  });
+}
+
+// ── Public Banks (Explore) ────────────────────────────────────────
+
+export async function listPublicBanks(skip: number = 0, limit: number = 50): Promise<QuestionBank[]> {
+  const items = await apiRequest<unknown[]>(`/api/question-banks/public?skip=${skip}&limit=${limit}`);
+  return items.map(normalizeBank);
+}
+
+export function forkBank(bankId: number): Promise<QuestionBank> {
+  return apiRequest<unknown>(`/api/question-banks/${bankId}/fork`, {
+    method: 'POST'
+  }).then(normalizeBank);
+}
+
 async function parseResponse(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) {
@@ -362,6 +434,7 @@ function normalizeImportJob(raw: unknown): ImportJob {
     bank_id: Number(item.bank_id),
     filename: String(item.filename ?? item.original_filename ?? ''),
     status: String(item.status ?? 'pending') as ImportJobStatus,
+    progress: Number(item.progress ?? 0),
     question_count: Number(item.question_count ?? generationConfig.question_count ?? 0),
     question_types: toStringArray(item.question_types ?? generationConfig.question_types ?? ['single_choice']) as QuestionType[],
     difficulty: String(item.difficulty ?? generationConfig.difficulty ?? 'medium') as Difficulty,
@@ -390,6 +463,7 @@ function normalizeDraft(raw: unknown): ImportedQuestionDraft {
     answer_text: readAnswerTextFromAnswer(answer),
     difficulty: String(item.difficulty ?? 'medium') as Difficulty,
     explanation: typeof item.explanation === 'string' ? item.explanation : '',
+    tags: Array.isArray(item.tags) ? item.tags.map(String) : [],
     options,
     status: String(item.status ?? 'pending') as DraftStatus,
     created_at: String(item.created_at ?? ''),
@@ -464,6 +538,7 @@ function serializeDraftPayload(payload: ImportedQuestionDraftPayload) {
         },
     explanation: payload.explanation ?? '',
     difficulty: payload.difficulty,
+    tags: payload.tags ?? [],
     status: payload.status
   };
 }
@@ -502,4 +577,20 @@ function toStringArray(value: unknown): string[] {
       .filter(Boolean);
   }
   return [];
+}
+
+function normalizeBank(raw: unknown): QuestionBank {
+  const record = asRecord(raw);
+  return {
+    id: Number(record.id),
+    owner_id: Number(record.owner_id),
+    owner_nickname: String(record.owner_nickname ?? ''),
+    owner_avatar_url: record.owner_avatar_url ? String(record.owner_avatar_url) : undefined,
+    name: String(record.name ?? ''),
+    description: String(record.description ?? ''),
+    visibility: String(record.visibility ?? 'private') as 'private' | 'public',
+    question_count: Number(record.question_count ?? 0),
+    created_at: String(record.created_at ?? ''),
+    updated_at: String(record.updated_at ?? ''),
+  };
 }

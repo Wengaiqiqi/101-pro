@@ -15,14 +15,17 @@ export function AdminSettingsPage() {
   const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
     getGlobalSettings()
       .then((s) => {
+        if (!isMounted) return;
         setSettings(s);
         setProvider(s.model_provider || 'openai-compatible');
         setBaseUrl(s.model_base_url || 'https://api.openai.com/v1');
         setModel(s.model_name || 'gpt-4o-mini');
       })
-      .catch((e) => setMessage({ tone: 'danger', text: e instanceof Error ? e.message : '加载失败' }));
+      .catch((e) => { if (isMounted) setMessage({ tone: 'danger', text: e instanceof Error ? e.message : '加载失败' }); });
+    return () => { isMounted = false; };
   }, []);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {

@@ -1,7 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, X, Globe, Lock } from 'lucide-react';
 import type { Difficulty, Question, QuestionBank, QuestionOption, QuestionPayload, QuestionType } from '../../api/types';
+import { updateQuestionBank } from '../../api/client';
+import { ConfirmModal } from '../../components/ConfirmModal';
 import { EmptyState } from '../../components/EmptyState';
 import { Field } from '../../components/Field';
 import { LatexText } from '../../components/LatexText';
@@ -15,6 +17,7 @@ interface BankDetailPageProps {
   onCreateQuestion: (payload: QuestionPayload) => Promise<void>;
   onUpdateQuestion: (questionId: number, payload: QuestionPayload) => Promise<void>;
   onDeleteQuestion: (questionId: number) => Promise<void>;
+  onBankUpdated?: (bank: QuestionBank) => void;
 }
 
 const defaultOptions: QuestionOption[] = [
@@ -30,11 +33,14 @@ export function BankDetailPage({
   onCreateQuestion,
   onUpdateQuestion,
   onDeleteQuestion,
+  onBankUpdated,
 }: BankDetailPageProps) {
   const navigate = useNavigate();
   const [editing, setEditing] = useState<Question | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Question | null>(null);
 
   function openCreate() {
     setEditing(null);
@@ -54,6 +60,20 @@ export function BankDetailPage({
     setError(null);
   }
 
+  async function toggleVisibility() {
+    setIsTogglingVisibility(true);
+    setError(null);
+    try {
+      const newVisibility = bank.visibility === 'public' ? 'private' : 'public';
+      const updated = await updateQuestionBank(bank.id, { visibility: newVisibility });
+      onBankUpdated?.(updated);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '更新失败');
+    } finally {
+      setIsTogglingVisibility(false);
+    }
+  }
+
   return (
     <section className="border border-slate-200 rounded-xl bg-white shadow-sm" aria-labelledby="bank-detail-title">
       <div className="flex items-center justify-between gap-4 px-4 py-3.5 border-b border-slate-100">
@@ -70,14 +90,35 @@ export function BankDetailPage({
             <p className="mt-0.5 text-[12px] text-slate-500">{bank.description || '共 ' + questions.length + ' 道题目'}</p>
           </div>
         </div>
-        <button
-          className="inline-flex items-center gap-2 min-h-[36px] px-3 rounded-lg bg-black text-white text-[13px] font-bold hover:bg-zinc-800 transition-colors"
-          type="button"
-          onClick={openCreate}
-        >
-          <Plus size={14} />
-          添加题目
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className={`inline-flex items-center gap-2 min-h-[36px] px-3 rounded-lg border text-[13px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              bank.visibility === 'public'
+                ? 'border-emerald-500 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+            }`}
+            type="button"
+            disabled={isTogglingVisibility}
+            onClick={() => void toggleVisibility()}
+          >
+            {isTogglingVisibility ? (
+              <span className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
+            ) : bank.visibility === 'public' ? (
+              <Globe size={14} />
+            ) : (
+              <Lock size={14} />
+            )}
+            {bank.visibility === 'public' ? '已公开' : '设为公开'}
+          </button>
+          <button
+            className="inline-flex items-center gap-2 min-h-[36px] px-3 rounded-lg bg-black text-white text-[13px] font-bold hover:bg-zinc-800 transition-colors"
+            type="button"
+            onClick={openCreate}
+          >
+            <Plus size={14} />
+            添加题目
+          </button>
+        </div>
       </div>
 
       {questions.length ? (
@@ -131,7 +172,7 @@ export function BankDetailPage({
                         className="inline-flex items-center justify-center w-8 h-8 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                         type="button"
                         title="删除"
-                        onClick={() => void onDeleteQuestion(question.id)}
+                        onClick={() => setDeleteTarget(question)}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -159,6 +200,21 @@ export function BankDetailPage({
           onUpdate={onUpdateQuestion}
         />
       )}
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        title="删除题目"
+        message={`确定删除题目"${deleteTarget?.stem?.slice(0, 50)}..."？`}
+        confirmLabel="删除"
+        danger
+        onConfirm={async () => {
+          if (deleteTarget) {
+            await onDeleteQuestion(deleteTarget.id);
+          }
+          setDeleteTarget(null);
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </section>
   );
 }

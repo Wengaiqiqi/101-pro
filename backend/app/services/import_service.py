@@ -2,7 +2,7 @@ from collections.abc import Sequence
 import logging
 from typing import Any
 
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
@@ -26,6 +26,10 @@ def _safe_int(value: object, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _strict_bool(value: object) -> bool:
+    return llm_client._coerce_llm_bool(value)
 
 
 def create_import_job(
@@ -84,8 +88,11 @@ def get_import_job(db: Session, user: User, import_job_id: int) -> ImportJob:
 
 def delete_import_job(db: Session, user: User, import_job_id: int) -> None:
     job = get_import_job(db, user, import_job_id)
-    db.execute(delete(ImportedQuestionDraft).where(ImportedQuestionDraft.import_job_id == job.id))
-    db.execute(delete(ImportJobChunk).where(ImportJobChunk.import_job_id == job.id))
+    # Mark as cancelled first to signal processing task to stop
+    if job.status in ("pending", "processing"):
+        job.status = "cancelled"
+        db.commit()
+        db.refresh(job)
     db.delete(job)
     db.commit()
 
@@ -112,12 +119,14 @@ def _dispatch_celery_job(import_job_id: int) -> None:
 
 
 def enqueue_import_job(import_job_id: int) -> None:
-    if get_settings().import_queue_mode == "local":
+    settings = get_settings()
+    if settings.import_queue_mode == "local":
         return
     try:
         _dispatch_celery_job(import_job_id)
     except Exception:
         logger.exception("Could not dispatch import job %s to Celery", import_job_id)
+        raise RuntimeError(f"Failed to enqueue import job {import_job_id}: Celery is not available")
 
 
 def list_drafts(db: Session, user: User, import_job_id: int) -> list[ImportedQuestionDraft]:
@@ -143,6 +152,35 @@ def update_draft(
     db.commit()
     db.refresh(draft)
     return draft
+
+
+def batch_approve_drafts(
+    db: Session,
+    user: User,
+    import_job_id: int,
+    draft_ids: list[int] | None = None,
+) -> dict[str, object]:
+    get_import_job(db, user, import_job_id)
+    query = (
+        select(ImportedQuestionDraft)
+        .where(
+            ImportedQuestionDraft.import_job_id == import_job_id,
+            ImportedQuestionDraft.status == "pending",
+        )
+    )
+    if draft_ids:
+        query = query.where(ImportedQuestionDraft.id.in_(draft_ids))
+    drafts = list(db.scalars(query))
+    if not drafts:
+        return {"approved_count": 0, "draft_ids": []}
+    approved_ids = [d.id for d in drafts]
+    db.execute(
+        update(ImportedQuestionDraft)
+        .where(ImportedQuestionDraft.id.in_(approved_ids))
+        .values(status="approved")
+    )
+    db.commit()
+    return {"approved_count": len(drafts), "draft_ids": approved_ids}
 
 
 def publish_drafts(db: Session, user: User, import_job_id: int) -> dict[str, object]:
@@ -177,20 +215,23 @@ def publish_drafts(db: Session, user: User, import_job_id: int) -> dict[str, obj
         drafts = pending
     question_ids: list[int] = []
     try:
+        draft_question_pairs = []
         for draft in drafts:
             try:
                 question = _question_from_draft(job, draft)
             except (BadRequestError, ValueError) as exc:
                 raise BadRequestError(f"草稿 #{draft.id} 发布失败: {exc.detail if hasattr(exc, 'detail') else exc}") from exc
             db.add(question)
-            db.flush()
+            draft_question_pairs.append((draft, question))
+        db.flush()  # Single flush for all questions
+        for draft, question in draft_question_pairs:
             draft.status = "published"
             question_ids.append(question.id)
 
         job.status = "completed"
         job.progress = 100
         db.commit()
-    except HTTPException:
+    except BadRequestError:
         db.rollback()
         raise
     except Exception as exc:
@@ -221,6 +262,20 @@ def _question_from_draft(job: ImportJob, draft: ImportedQuestionDraft) -> Questi
         source=f"import_job:{job.id}",
         options=[QuestionOption(**option) for option in options],
     )
+
+
+class JobCancelledError(Exception):
+    """Raised when an import job is cancelled during processing."""
+    pass
+
+
+def _check_job_cancelled(db: Session, import_job_id: int) -> None:
+    """Check if job has been cancelled and raise if so."""
+    result = db.execute(
+        select(ImportJob.status).where(ImportJob.id == import_job_id)
+    ).scalar()
+    if result is None or result == "cancelled":
+        raise JobCancelledError(f"Import job {import_job_id} was cancelled")
 
 
 def process_import_job(db: Session, import_job_id: int) -> ImportJob:
@@ -263,19 +318,37 @@ def process_import_job(db: Session, import_job_id: int) -> ImportJob:
             model=config.model,
             api_key=config.api_key,
         )
+        chunk_work = [(chunk.id, chunk.text) for chunk in saved_chunks]
+        db.commit()
 
-        for index, chunk in enumerate(saved_chunks):
-            generated = llm_client.generate_question_drafts(llm_config, chunk.text, job.generation_config)
+        for index, (chunk_id, chunk_text) in enumerate(chunk_work):
+            # Check if job was cancelled before processing each chunk
+            _check_job_cancelled(db, import_job_id)
+            db.rollback()
+
+            generated = llm_client.generate_question_drafts(llm_config, chunk_text, job.generation_config)
+            job = db.get(ImportJob, import_job_id)
+            chunk = db.get(ImportJobChunk, chunk_id)
+            if job is None or chunk is None or job.status == "cancelled":
+                db.rollback()
+                raise JobCancelledError(f"Import job {import_job_id} was cancelled")
             chunk.raw_model_output = {"questions": generated}
             chunk.status = "completed"
             for generated_draft in generated:
                 db.add(_draft_from_generated(job.id, chunk.id, generated_draft))
             job.progress = 40 + int(((index + 1) / len(saved_chunks)) * 50)
-            db.flush()
+            db.commit()
 
+        job = db.get(ImportJob, import_job_id)
+        if job is None or job.status == "cancelled":
+            raise JobCancelledError(f"Import job {import_job_id} was cancelled")
         job.status = "reviewing"
         job.progress = 90
         db.commit()
+    except JobCancelledError:
+        # Job was cancelled, clean up and re-raise
+        db.rollback()
+        raise
     except Exception as exc:
         db.rollback()
         job = db.get(ImportJob, import_job_id)
@@ -283,7 +356,7 @@ def process_import_job(db: Session, import_job_id: int) -> ImportJob:
             raise
         job.status = "failed"
         job.error_message = str(exc)
-        job.progress = 100
+        # Keep current progress, don't set to 100 on failure
         db.commit()
     db.refresh(job)
     return job
@@ -301,10 +374,36 @@ def _get_owned_draft(db: Session, user: User, draft_id: int) -> ImportedQuestion
 
 
 def _chunk_text(text: str, max_chars: int = 6000) -> list[str]:
+    """Split text into chunks at paragraph boundaries near max_chars."""
     clean_text = text.strip()
     if len(clean_text) <= max_chars:
         return [clean_text]
-    return [clean_text[index : index + max_chars] for index in range(0, len(clean_text), max_chars)]
+
+    chunks = []
+    remaining = clean_text
+    while remaining:
+        if len(remaining) <= max_chars:
+            chunks.append(remaining)
+            break
+
+        # Find a good split point near max_chars (prefer paragraph, then sentence)
+        split_at = max_chars
+        # Look for paragraph break
+        para_break = remaining.rfind("\n\n", max_chars // 2, max_chars)
+        if para_break > max_chars // 4:
+            split_at = para_break + 2
+        else:
+            # Look for sentence break
+            for sep in ["。", ".", "！", "!", "？", "?", "\n"]:
+                pos = remaining.rfind(sep, max_chars // 2, max_chars)
+                if pos > max_chars // 4:
+                    split_at = pos + 1
+                    break
+
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:].lstrip()
+
+    return chunks
 
 
 def _draft_from_generated(import_job_id: int, chunk_id: int | None, generated: dict[str, object]) -> ImportedQuestionDraft:
@@ -373,7 +472,7 @@ def _normalize_options(raw_options: object) -> list[dict[str, Any]]:
             {
                 "label": label,
                 "content": str(raw_option.get("content") or ""),
-                "is_correct": bool(raw_option.get("is_correct", False)),
+                "is_correct": _strict_bool(raw_option.get("is_correct", False)),
                 "sort_order": sort_order,
             }
         )
@@ -400,7 +499,7 @@ def _validated_options(raw_options: object, answer_json: dict[str, Any] | None =
             {
                 "label": label,
                 "content": content,
-                "is_correct": bool(raw_option.get("is_correct", False)),
+                "is_correct": _strict_bool(raw_option.get("is_correct", False)),
                 "sort_order": sort_order,
             }
         )
@@ -453,7 +552,7 @@ def _answer_text(question_type: str, answer_json: dict[str, Any], options: list[
         # Filter out labels that don't match any option
         valid_labels = [l for l in labels if l in option_labels]
         if not valid_labels:
-            valid_labels = labels  # use raw labels if none match
+            raise BadRequestError("Draft answer must reference an existing option")
         return " ".join(sorted(valid_labels))
     value = answer_json.get("text") or answer_json.get("answer") or answer_json.get("label")
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):

@@ -1,6 +1,6 @@
-from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_, select
+from app.core.exceptions import BadRequestError, UnauthorizedError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_password, verify_password
@@ -9,17 +9,13 @@ from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 
 
 def register_user(db: Session, payload: RegisterRequest) -> User:
-    conditions = [User.username == payload.username]
-    if payload.email:
-        conditions.append(User.email == payload.email)
-
-    existing_user = db.scalar(select(User).where(or_(*conditions)))
+    existing_user = db.scalar(select(User).where(User.username == payload.username))
     if existing_user is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username or email already registered")
+        raise BadRequestError("用户名已存在")
 
     user = User(
         username=payload.username,
-        email=payload.email,
+        nickname=payload.username,
         password_hash=hash_password(payload.password),
     )
     db.add(user)
@@ -27,26 +23,17 @@ def register_user(db: Session, payload: RegisterRequest) -> User:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username or email already registered",
-        ) from exc
+        raise BadRequestError("用户名已存在") from exc
     db.refresh(user)
     return user
 
 
 def authenticate_user(db: Session, payload: LoginRequest) -> TokenResponse:
-    user = db.scalar(
-        select(User).where(or_(User.username == payload.username_or_email, User.email == payload.username_or_email))
-    )
+    user = db.scalar(select(User).where(User.username == payload.username))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username, email, or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise UnauthorizedError("用户名或密码错误")
 
-    return TokenResponse(access_token=create_access_token(str(user.id)))
+    return TokenResponse(access_token=create_access_token(str(user.id), user.password_version))
 
 
 def get_user_by_id(db: Session, user_id: int) -> User | None:

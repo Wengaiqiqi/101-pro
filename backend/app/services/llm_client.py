@@ -9,6 +9,20 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_http_client: object | None = None
+
+
+def _get_http_client():
+    """Get or create a shared httpx client with connection pooling."""
+    global _http_client
+    try:
+        import httpx
+    except ModuleNotFoundError:
+        return None
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.Client(timeout=httpx.Timeout(600.0, connect=15.0), limits=httpx.Limits(max_connections=10))
+    return _http_client
+
 
 @dataclass(frozen=True)
 class LLMConfig:
@@ -16,6 +30,12 @@ class LLMConfig:
     base_url: str
     model: str
     api_key: str
+
+
+def _coerce_llm_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError("LLM boolean fields must be JSON booleans")
 
 
 def _strip_code_fences(text: str) -> str:
@@ -270,7 +290,7 @@ def _normalize_page_question(question: dict[str, object]) -> dict[str, object]:
                 or raw_option.get("value")
                 or ""
             ).strip()
-            is_correct = bool(raw_option.get("is_correct", False))
+            is_correct = _coerce_llm_bool(raw_option.get("is_correct", False))
             sort_order = int(raw_option.get("sort_order") or index)
         else:
             option_text = str(raw_option).strip()
@@ -395,10 +415,9 @@ def generate_question_drafts(
     text: str,
     generation_config: dict[str, object],
 ) -> list[dict[str, object]]:
-    try:
-        import httpx
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("httpx is required to generate question drafts") from exc
+    http = _get_http_client()
+    if http is None:
+        raise RuntimeError("httpx is required to generate question drafts")
 
     prompt = _build_prompt(text, generation_config)
 
@@ -406,7 +425,7 @@ def generate_question_drafts(
     last_error = None
     for attempt in range(3):
         try:
-            response = httpx.post(
+            response = http.post(
                 f"{config.base_url.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {config.api_key}"},
                 json={
@@ -414,7 +433,6 @@ def generate_question_drafts(
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.2,
                 },
-                timeout=600,
             )
             response.raise_for_status()
             payload = response.json()
@@ -453,13 +471,53 @@ def generate_question_drafts(
     return result
 
 
+def _call_llm_for_grading(config: LLMConfig, prompt: str) -> dict[str, object]:
+    """
+    Internal function to call LLM for grading.
+
+    Returns:
+        dict with "correct" (bool) and "feedback" (str)
+    """
+    http = _get_http_client()
+    if http is None:
+        return {"correct": False, "feedback": "无法评判（缺少 httpx）"}
+
+    try:
+        url = f"{config.base_url.rstrip('/')}/chat/completions"
+        logger.debug(f"[AI grading] POST {url} model={config.model}")
+        response = http.post(
+            url,
+            headers={"Authorization": f"Bearer {config.api_key}"},
+            json={
+                "model": config.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 100000,
+            },
+        )
+        logger.debug(f"[AI grading] response status={response.status_code}")
+        response.raise_for_status()
+        resp_json = response.json()
+        logger.debug(f"[AI grading] raw response={str(resp_json)[:500]}")
+        content = _strip_code_fences(resp_json["choices"][0]["message"]["content"])
+        logger.debug(f"[AI grading] parsed content={content[:200]}")
+        result = _safe_json_loads(content)
+        return {
+            "correct": _coerce_llm_bool(result.get("correct", False)),
+            "feedback": str(result.get("feedback", "")),
+        }
+    except Exception as exc:
+        logger.warning(f"[AI grading] EXCEPTION: {type(exc).__name__}: {exc}")
+        return {"correct": False, "feedback": "AI 评判失败"}
+
+
 def evaluate_short_answer(
     config: LLMConfig,
     question_stem: str,
     reference_answer: str,
     user_answer: str,
 ) -> dict[str, object]:
-    """Use LLM to evaluate a short answer question. Returns {"correct": bool, "feedback": str}."""
+    """Use LLM to evaluate a short answer question with reference answer. Returns {"correct": bool, "feedback": str}."""
     prompt = (
         "你是一位严谨的考试阅卷老师。请根据参考答案评判学生的回答是否正确。\n\n"
         "## 评判规则\n"
@@ -477,41 +535,7 @@ def evaluate_short_answer(
         "严格返回以下 JSON，不要有其他内容：\n"
         '{"correct": true/false, "feedback": "简短评价"}'
     )
-
-    try:
-        import httpx
-    except ModuleNotFoundError:
-        # 无法调用 LLM 时，回退到简单匹配
-        return {"correct": False, "feedback": "无法评判（缺少 httpx）"}
-
-    try:
-        url = f"{config.base_url.rstrip('/')}/chat/completions"
-        print(f"[AI grading] POST {url} model={config.model}")
-        response = httpx.post(
-            url,
-            headers={"Authorization": f"Bearer {config.api_key}"},
-            json={
-                "model": config.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.1,
-                "max_tokens": 100000,
-            },
-            timeout=30,
-        )
-        print(f"[AI grading] response status={response.status_code}")
-        response.raise_for_status()
-        resp_json = response.json()
-        print(f"[AI grading] raw response={str(resp_json)[:500]}")
-        content = _strip_code_fences(resp_json["choices"][0]["message"]["content"])
-        print(f"[AI grading] parsed content={content[:200]}")
-        result = json.loads(content)
-        return {
-            "correct": bool(result.get("correct", False)),
-            "feedback": str(result.get("feedback", "")),
-        }
-    except Exception as exc:
-        print(f"[AI grading] EXCEPTION: {type(exc).__name__}: {exc}")
-        return {"correct": False, "feedback": "AI 评判失败"}
+    return _call_llm_for_grading(config, prompt)
 
 
 def evaluate_short_answer_by_ai(
@@ -536,37 +560,4 @@ def evaluate_short_answer_by_ai(
         "严格返回以下 JSON，不要有其他内容：\n"
         '{"correct": true/false, "feedback": "简短评价"}'
     )
-
-    try:
-        import httpx
-    except ModuleNotFoundError:
-        return {"correct": False, "feedback": "无法评判（缺少 httpx）"}
-
-    try:
-        url = f"{config.base_url.rstrip('/')}/chat/completions"
-        print(f"[AI grading] POST {url} model={config.model}")
-        response = httpx.post(
-            url,
-            headers={"Authorization": f"Bearer {config.api_key}"},
-            json={
-                "model": config.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.1,
-                "max_tokens": 100000,
-            },
-            timeout=30,
-        )
-        print(f"[AI grading] response status={response.status_code}")
-        response.raise_for_status()
-        resp_json = response.json()
-        print(f"[AI grading] raw response={str(resp_json)[:500]}")
-        content = _strip_code_fences(resp_json["choices"][0]["message"]["content"])
-        print(f"[AI grading] parsed content={content[:200]}")
-        result = json.loads(content)
-        return {
-            "correct": bool(result.get("correct", False)),
-            "feedback": str(result.get("feedback", "")),
-        }
-    except Exception as exc:
-        print(f"[AI grading] EXCEPTION: {type(exc).__name__}: {exc}")
-        return {"correct": False, "feedback": "AI 评判失败"}
+    return _call_llm_for_grading(config, prompt)

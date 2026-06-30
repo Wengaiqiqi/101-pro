@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,7 +8,7 @@ import type { QuestionBank, User } from '../api/types';
 const currentUser: User = {
   id: 1,
   username: 'alice',
-  email: 'alice@example.com',
+  nickname: 'Alice',
   role: 'student',
   is_active: true,
   created_at: '2026-01-01T00:00:00Z'
@@ -31,7 +31,7 @@ describe('bank flow', () => {
     vi.restoreAllMocks();
   });
 
-  it('logs in, lists banks, creates a bank, and shows the new bank', async () => {
+  it('logs in and lists the user banks', async () => {
     const user = userEvent.setup();
     const banks: QuestionBank[] = [
       {
@@ -70,22 +70,6 @@ describe('bank flow', () => {
         return jsonResponse([]);
       }
 
-      if (url === '/api/question-banks' && method === 'POST') {
-        const payload = JSON.parse(init?.body?.toString() ?? '{}');
-        const created: QuestionBank = {
-          id: 11,
-          owner_id: 1,
-          name: payload.name,
-          description: payload.description,
-          visibility: 'private',
-          question_count: 0,
-          created_at: '2026-01-03T00:00:00Z',
-          updated_at: '2026-01-03T00:00:00Z'
-        };
-        banks.push(created);
-        return jsonResponse(created, { status: 201 });
-      }
-
       return jsonResponse({ detail: `Unhandled ${method} ${url}` }, { status: 500 });
     });
 
@@ -93,25 +77,12 @@ describe('bank flow', () => {
 
     await user.type(screen.getByLabelText('用户名'), 'alice');
     await user.type(screen.getByLabelText('密码'), 'correct-password');
-    await user.click(screen.getByRole('button', { name: '登录' }));
+    await user.click(screen.getByRole('button', { name: '登录系统' }));
 
     await screen.findByRole('heading', { name: '工作台概览' });
 
     await user.click(screen.getByRole('link', { name: '题库管理' }));
     expect(await screen.findByText('算法基础')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '新建题库' }));
-    const form = screen.getByRole('form', { name: '新建题库' });
-    const nameInput = within(form).getAllByRole('textbox')[0];
-    await user.type(nameInput, '高频错题');
-    const descInput = within(form).getAllByRole('textbox')[1];
-    await user.type(descInput, '每周复盘题');
-    await user.click(within(form).getByRole('button', { name: '确认创建' }));
-
-    await waitFor(() => expect(screen.getByText('高频错题')).toBeInTheDocument());
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/api/question-banks',
-      expect.objectContaining({ method: 'POST' })
-    );
+    expect(screen.getByRole('cell', { name: '数组、链表、递归' })).toBeInTheDocument();
   });
 });

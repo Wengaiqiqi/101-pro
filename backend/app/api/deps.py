@@ -23,6 +23,7 @@ def get_current_user(
         payload = decode_access_token(credentials.credentials)
         subject = payload.get("sub")
         user_id = int(subject) if isinstance(subject, str) else None
+        token_password_version = payload.get("pwd_ver", 1)
     except (JWTError, TypeError, ValueError):
         raise credentials_exception from None
 
@@ -32,6 +33,11 @@ def get_current_user(
     user = get_user_by_id(db, user_id)
     if user is None or not user.is_active:
         raise credentials_exception
+
+    # Check password version - if token was issued before last password change, reject it
+    if user.password_version != token_password_version:
+        raise credentials_exception
+
     return user
 
 

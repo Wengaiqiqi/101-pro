@@ -26,7 +26,7 @@ class QuestionCreate(BaseModel):
     stem: str = Field(min_length=1)
     answer_text: str = Field(min_length=1)
     explanation: str = ""
-    difficulty: str = Field(default="normal", min_length=1, max_length=32)
+    difficulty: str = Field(default="medium", min_length=1, max_length=32)
     tags: list[str] = Field(default_factory=list)
     source: str = Field(default="", max_length=255)
     options: list[QuestionOptionCreate] = Field(default_factory=list)
@@ -76,5 +76,29 @@ class QuestionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     options: list[QuestionOptionResponse]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QuestionOptionPracticeResponse(BaseModel):
+    id: int
+    label: str
+    content: str
+    sort_order: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QuestionPracticeResponse(BaseModel):
+    """Schema for practice mode - excludes answers and correct indicators."""
+    id: int
+    bank_id: int
+    type: str
+    stem: str
+    difficulty: str
+    tags: list[str]
+    created_at: datetime
+    updated_at: datetime
+    options: list[QuestionOptionPracticeResponse]
 
     model_config = ConfigDict(from_attributes=True)

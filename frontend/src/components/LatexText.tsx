@@ -41,10 +41,15 @@ function renderMath(latex: string): string {
       throwOnError: false,
       displayMode: false,
       strict: false,
+      trust: false,
     });
   } catch {
-    return latex;
+    return escapeHtml(latex);
   }
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 export function LatexText({ text, className }: LatexTextProps) {

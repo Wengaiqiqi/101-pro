@@ -3,8 +3,8 @@
 export type QuestionType = 'single_choice' | 'multiple_choice' | 'true_false' | 'fill_blank' | 'short_answer';
 export type Difficulty = 'auto' | 'easy' | 'medium' | 'hard';
 export type Visibility = 'private' | 'public';
-export type ImportJobStatus = 'pending' | 'processing' | 'reviewing' | 'completed' | 'failed';
-export type DraftStatus = 'pending' | 'approved' | 'rejected';
+export type ImportJobStatus = 'pending' | 'processing' | 'reviewing' | 'completed' | 'failed' | 'cancelled';
+export type DraftStatus = 'pending' | 'approved' | 'rejected' | 'published';
 export type MasteryStatus = 'mastered' | 'unmastered';
 export type PracticeMode = 'sequential' | 'random';
 
@@ -13,7 +13,8 @@ export type PracticeMode = 'sequential' | 'random';
 export interface User {
   id: number;
   username: string;
-  email?: string;
+  nickname: string;
+  avatar_url?: string;
   role: string;
   is_active: boolean;
   created_at: string;
@@ -25,7 +26,7 @@ export interface TokenResponse {
 }
 
 export interface LoginPayload {
-  username_or_email: string;
+  username: string;
   password: string;
 }
 
@@ -39,6 +40,8 @@ export interface RegisterPayload {
 export interface QuestionBank {
   id: number;
   owner_id: number;
+  owner_nickname?: string;
+  owner_avatar_url?: string;
   name: string;
   description: string;
   visibility: Visibility;
@@ -95,6 +98,7 @@ export interface ImportJob {
   bank_id: number;
   filename: string;
   status: ImportJobStatus;
+  progress: number;
   question_count: number;
   question_types: QuestionType[];
   difficulty: Difficulty;
@@ -124,6 +128,7 @@ export interface ImportedQuestionDraft {
   answer_text: string;
   difficulty: Difficulty;
   explanation?: string;
+  tags?: string[];
   options: QuestionOption[];
   status: DraftStatus;
   created_at: string;
@@ -137,6 +142,7 @@ export interface ImportedQuestionDraftPayload {
   answer_text?: string;
   difficulty: Difficulty;
   explanation?: string;
+  tags?: string[];
   options: QuestionOption[];
   status?: DraftStatus;
 }
@@ -212,6 +218,9 @@ export interface PracticeAnswer {
   question_id: number;
   user_answer_json: { value?: unknown } & Record<string, unknown>;
   is_correct: boolean;
+  correct_answer_text?: string | null;
+  correct_option_labels?: string[];
+  explanation?: string | null;
   feedback?: string | null;
   elapsed_seconds: number;
   created_at: string;

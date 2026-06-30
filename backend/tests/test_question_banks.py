@@ -86,3 +86,39 @@ def test_non_owner_get_update_and_delete_question_bank_returns_403(client: TestC
     assert client.get(f"/api/question-banks/{bank_id}", headers=bob_headers).status_code == 403
     assert client.put(f"/api/question-banks/{bank_id}", headers=bob_headers, json={"name": "Mine"}).status_code == 403
     assert client.delete(f"/api/question-banks/{bank_id}", headers=bob_headers).status_code == 403
+
+
+def test_user_can_fork_non_empty_public_bank(client: TestClient) -> None:
+    owner_token = register_and_login(client, "owner", "owner@example.com")
+    forker_token = register_and_login(client, "forker", "forker@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    forker_headers = {"Authorization": f"Bearer {forker_token}"}
+
+    bank_response = client.post(
+        "/api/question-banks",
+        headers=owner_headers,
+        json={"name": "Shared Bank"},
+    )
+    bank_id = bank_response.json()["id"]
+    assert client.put(
+        f"/api/question-banks/{bank_id}",
+        headers=owner_headers,
+        json={"visibility": "public"},
+    ).status_code == 200
+    assert client.post(
+        f"/api/question-banks/{bank_id}/questions",
+        headers=owner_headers,
+        json={
+            "type": "fill_blank",
+            "stem": "2 + 2 = ?",
+            "answer_text": "4",
+            "options": [],
+        },
+    ).status_code == 201
+
+    fork_response = client.post(f"/api/question-banks/{bank_id}/fork", headers=forker_headers)
+
+    assert fork_response.status_code == 201
+    forked_id = fork_response.json()["id"]
+    questions = client.get(f"/api/question-banks/{forked_id}/questions", headers=forker_headers).json()
+    assert [(item["stem"], item["answer_text"]) for item in questions] == [("2 + 2 = ?", "4")]

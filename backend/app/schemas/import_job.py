@@ -87,3 +87,12 @@ class ImportedQuestionDraftUpdate(BaseModel):
 class ImportPublishResponse(BaseModel):
     published_count: int
     question_ids: list[int]
+
+
+class BatchApproveDraftsRequest(BaseModel):
+    draft_ids: list[int] = Field(default_factory=list)
+
+
+class BatchApproveDraftsResponse(BaseModel):
+    approved_count: int
+    draft_ids: list[int]

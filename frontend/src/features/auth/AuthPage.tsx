@@ -30,7 +30,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
       }
 
       const token = await login({
-        username_or_email: username,
+        username,
         password,
       });
       persistToken(token.access_token);
@@ -78,7 +78,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
             autoComplete="username"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
-            placeholder={isRegistering ? '输入用户名' : '用户名或邮箱'}
+            placeholder="输入用户名"
             required
           />
 

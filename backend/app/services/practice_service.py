@@ -1,11 +1,11 @@
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import logging
 import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import func, select, update
+from sqlalchemy import Integer, cast, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -41,31 +41,36 @@ def _normalized_text(value: object) -> str:
 
 
 def is_answer_correct(question: Question, user_answer: object, llm_config: LLMConfig | None = None) -> tuple[bool, str | None]:
-    """返回 (是否正确, AI反馈)。非简答题 feedback 为 None。"""
+    """Return (is_correct, feedback). feedback is None for non-short-answer questions."""
     question_type = question.type.lower()
+
     if question_type == "multiple_choice":
         return _choice_answer_labels(question.answer_text) == _choice_answer_labels(user_answer), None
 
+    if question_type == "single_choice" or question_type == "true_false":
+        expected = normalize_answer(question.answer_text.split("|"))
+        actual = normalize_answer(user_answer)
+        return expected == actual, None
+
+    user_text = str(user_answer).strip() if user_answer else ""
+
     if question_type == "short_answer" and llm_config:
-        qid = getattr(question, 'id', '?')
-        user_text = str(user_answer).strip() if user_answer else ""
-        if user_text:
-            if question.answer_text:
-                print(f"[AI grading] question {qid}: grading with reference answer")
-                result = evaluate_short_answer(llm_config, question.stem, question.answer_text, user_text)
-            else:
-                print(f"[AI grading] question {qid}: no reference answer, AI solving + grading")
-                result = evaluate_short_answer_by_ai(llm_config, question.stem, user_text)
-            print(f"[AI grading] question {qid}: result={result}")
-            return bool(result.get("correct", False)), str(result.get("feedback", ""))
+        if not user_text:
+            return False, "未作答"
+        if question.answer_text:
+            result = evaluate_short_answer(llm_config, question.stem, question.answer_text, user_text)
         else:
-            print(f"[AI grading] question {qid}: SKIPPED - empty user answer")
+            result = evaluate_short_answer_by_ai(llm_config, question.stem, user_text)
+        return bool(result.get("correct", False)), str(result.get("feedback", ""))
+
+    if question_type in {"fill_blank", "short_answer"}:
+        if not user_text:
+            return False, None
+        accepted_answers = {_normalized_text(answer) for answer in question.answer_text.split("|")}
+        return _normalized_text(user_answer) in accepted_answers, None
 
     expected = normalize_answer(question.answer_text.split("|"))
     actual = normalize_answer(user_answer)
-    if question_type in {"fill_blank", "short_answer"}:
-        accepted_answers = {_normalized_text(answer) for answer in question.answer_text.split("|")}
-        return _normalized_text(user_answer) in accepted_answers, None
     return expected == actual, None
 
 
@@ -74,10 +79,10 @@ def _resolve_llm_config(db: Session, user: User) -> LLMConfig | None:
     from app.services.model_settings_service import resolve_model_config
     try:
         config = resolve_model_config(db, user)
-        print(f"[AI grading] LLM config resolved: provider={config.provider}, model={config.model}, base_url={config.base_url}")
+        logger.debug(f"[AI grading] LLM config resolved: provider={config.provider}, model={config.model}, base_url={config.base_url}")
         return LLMConfig(provider=config.provider, base_url=config.base_url, model=config.model, api_key=config.api_key)
     except Exception as exc:
-        print(f"[AI grading] LLM config resolution FAILED: {exc}")
+        logger.warning(f"[AI grading] LLM config resolution FAILED: {exc}")
         return None
 
 
@@ -108,8 +113,7 @@ def _get_practice_session(db: Session, user: User, session_id: int, *, for_updat
         .options(selectinload(PracticeSession.answers))
         .where(PracticeSession.id == session_id, PracticeSession.user_id == user.id)
     )
-    if for_update:
-        statement = statement.with_for_update()
+    # Note: FOR UPDATE is not supported by SQLite; using IntegrityError handling instead
     session = db.scalar(statement)
     if session is None:
         raise NotFoundError()
@@ -132,7 +136,7 @@ def submit_answer(db: Session, user: User, session_id: int, payload: PracticeAns
     answer = _get_practice_answer(db, session_id, payload.question_id, for_update=True)
     created = answer is None
     was_correct = answer.is_correct if answer is not None else None
-    if created and _session_answer_count(db, session_id) >= session.question_count:
+    if created and len(session.answers) >= session.question_count:
         raise BadRequestError("Practice session question limit reached")
 
     if created:
@@ -171,7 +175,7 @@ def finish_practice_session(db: Session, user: User, session_id: int) -> Practic
     score = sum(1 for answer in session.answers if answer.is_correct)
     session.score = score
     session.accuracy = int(score * 100 / answered_count) if answered_count else 0
-    session.finished_at = datetime.now(UTC)
+    session.finished_at = datetime.now(timezone.utc)
     db.commit()
     return get_practice_session(db, user, session_id)
 
@@ -179,6 +183,7 @@ def finish_practice_session(db: Session, user: User, session_id: int) -> Practic
 def list_wrong_questions(db: Session, user: User, *, skip: int = 0, limit: int = 100) -> list[WrongQuestion]:
     statement = (
         select(WrongQuestion)
+        .options(selectinload(WrongQuestion.question))
         .where(WrongQuestion.user_id == user.id)
         .order_by(WrongQuestion.updated_at.desc(), WrongQuestion.id.desc())
         .offset(skip)
@@ -204,8 +209,7 @@ def _get_practice_answer(db: Session, session_id: int, question_id: int, *, for_
         PracticeAnswer.session_id == session_id,
         PracticeAnswer.question_id == question_id,
     )
-    if for_update:
-        statement = statement.with_for_update()
+    # Note: FOR UPDATE is not supported by SQLite; using IntegrityError handling instead
     return db.scalar(statement)
 
 
@@ -217,12 +221,11 @@ def _apply_answer(answer: PracticeAnswer, payload: PracticeAnswerCreate, is_corr
     answer.user_answer_json = {"value": payload.user_answer}
     answer.elapsed_seconds = payload.elapsed_seconds
     answer.is_correct = is_correct
-    if feedback:
-        answer.feedback = feedback
+    answer.feedback = feedback
 
 
 def _record_wrong_answer(db: Session, user: User, question_id: int) -> None:
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     result = db.execute(
         update(WrongQuestion)
         .where(WrongQuestion.user_id == user.id, WrongQuestion.question_id == question_id)
@@ -263,49 +266,57 @@ def _record_wrong_answer(db: Session, user: User, question_id: int) -> None:
 def get_activity_stats(db: Session, user: User, days: int = 7) -> ActivityStatsResponse:
     today = date.today()
     start = today - timedelta(days=days - 1)
-    start_str = start.isoformat()
+    start_datetime = datetime.combine(start, datetime.min.time()).replace(tzinfo=timezone.utc)
 
-    # Get sessions per day
+    # Get sessions grouped by date using database-level aggregation
     session_rows = db.execute(
-        select(PracticeSession)
-        .where(PracticeSession.user_id == user.id)
-    ).scalars().all()
+        select(PracticeSession.id, PracticeSession.started_at)
+        .where(
+            PracticeSession.user_id == user.id,
+            PracticeSession.started_at >= start_datetime,
+        )
+    ).all()
 
-    # Aggregate in Python to avoid SQLite func.date() timezone issues
-    day_sessions: dict[str, list[int]] = {}  # date_str -> [session_ids]
-    for s in session_rows:
-        if s.started_at is None:
+    # Build date -> session_ids mapping
+    day_sessions: dict[str, list[int]] = {}
+    for sid, started_at in session_rows:
+        if started_at is None:
             continue
-        ds = s.started_at.date().isoformat() if s.started_at.tzinfo else s.started_at.strftime("%Y-%m-%d")
-        if ds >= start_str:
-            day_sessions.setdefault(ds, []).append(s.id)
+        ds = started_at.date().isoformat() if started_at.tzinfo else started_at.strftime("%Y-%m-%d")
+        day_sessions.setdefault(ds, []).append(sid)
 
-    # Get answers for those sessions
+    # Get answer aggregates per session in a single query
     all_session_ids = [sid for sids in day_sessions.values() for sid in sids]
     day_correct: dict[str, int] = {}
     day_total: dict[str, int] = {}
     day_elapsed: dict[str, int] = {}
 
     if all_session_ids:
-        answers = db.execute(
-            select(PracticeAnswer)
-            .where(PracticeAnswer.session_id.in_(all_session_ids))
-        ).scalars().all()
-
         # Build session_id -> date lookup
         session_date: dict[int, str] = {}
         for ds, sids in day_sessions.items():
             for sid in sids:
                 session_date[sid] = ds
 
-        for a in answers:
-            ds = session_date.get(a.session_id)
+        # Get aggregated answer stats per session
+        answer_stats = db.execute(
+            select(
+                PracticeAnswer.session_id,
+                func.count().label("total"),
+                func.sum(cast(PracticeAnswer.is_correct, Integer)).label("correct"),
+                func.sum(PracticeAnswer.elapsed_seconds).label("elapsed"),
+            )
+            .where(PracticeAnswer.session_id.in_(all_session_ids))
+            .group_by(PracticeAnswer.session_id)
+        ).all()
+
+        for session_id, total, correct, elapsed in answer_stats:
+            ds = session_date.get(session_id)
             if not ds:
                 continue
-            day_total[ds] = day_total.get(ds, 0) + 1
-            day_elapsed[ds] = day_elapsed.get(ds, 0) + a.elapsed_seconds
-            if a.is_correct:
-                day_correct[ds] = day_correct.get(ds, 0) + 1
+            day_total[ds] = day_total.get(ds, 0) + total
+            day_elapsed[ds] = day_elapsed.get(ds, 0) + (elapsed or 0)
+            day_correct[ds] = day_correct.get(ds, 0) + (correct or 0)
 
     daily: list[DailyActivity] = []
     total_sessions = 0

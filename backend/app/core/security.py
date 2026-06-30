@@ -2,9 +2,12 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     from jose import jwt
@@ -72,14 +75,20 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(_b64encode(digest), expected)
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, password_version: int = 1) -> str:
     settings = get_settings()
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload: dict[str, Any] = {"sub": subject, "exp": int(expires_at.timestamp())}
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "exp": int(expires_at.timestamp()),
+        "pwd_ver": password_version,
+    }
     if jwt is not None:
         return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
     _require_crypto_fallback_allowed("python-jose")
+    if settings.jwt_secret_key == "change-me-in-development":
+        logger.warning("Using default JWT secret! Set JWT_SECRET_KEY environment variable.")
     header = {"alg": "HS256", "typ": "JWT"}
     signing_input = ".".join(
         [

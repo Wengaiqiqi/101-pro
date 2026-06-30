@@ -89,6 +89,85 @@ def _set_job_status(client: TestClient, job_id: int, status: str) -> None:
         db.close()
 
 
+def test_import_progress_is_committed_between_chunks(tmp_path, monkeypatch) -> None:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.base import Base
+    import app.models  # noqa: F401 - register all mapped tables
+    from app.models.import_job import ImportJob
+    from app.models.question import QuestionBank
+    from app.models.user import User
+    from app.services import document_extractors, import_service, llm_client
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'progress.db'}")
+    session_local = sessionmaker(bind=engine)
+    Base.metadata.create_all(engine)
+    db = session_local()
+    user = User(username="progress-user", nickname="Progress", password_hash="unused")
+    db.add(user)
+    db.flush()
+    bank = QuestionBank(owner_id=user.id, name="Progress Bank")
+    db.add(bank)
+    db.flush()
+    job = ImportJob(
+        user_id=user.id,
+        bank_id=bank.id,
+        original_filename="fixture.txt",
+        stored_path="unused.txt",
+        mime_type="text/plain",
+        status="pending",
+        generation_config={},
+    )
+    db.add(job)
+    db.commit()
+    job_id = job.id
+
+    monkeypatch.setattr(import_service, "resolve_model_config", lambda current_db, current_user: _FakeModelConfig())
+    monkeypatch.setattr(document_extractors, "extract_text", lambda *args: ("A" * 6000) + "\n\n" + ("B" * 1000))
+
+    observed_progress: list[int] = []
+
+    def generate(*args, **kwargs):
+        observer = session_local()
+        try:
+            observed_progress.append(observer.get(ImportJob, job_id).progress)
+        finally:
+            observer.close()
+        return [{"type": "fill_blank", "stem": "S", "answer": {"text": "A"}}]
+
+    monkeypatch.setattr(llm_client, "generate_question_drafts", generate)
+    import_service.process_import_job(db, job_id)
+
+    assert len(observed_progress) == 2
+    assert observed_progress[0] == 10
+    assert observed_progress[1] > observed_progress[0]
+    db.close()
+    engine.dispose()
+
+
+def test_publish_rejects_answer_label_missing_from_options() -> None:
+    from app.core.exceptions import BadRequestError
+    from app.models.import_job import ImportJob, ImportedQuestionDraft
+    from app.services.import_service import _question_from_draft
+
+    job = ImportJob(id=1, user_id=1, bank_id=1, original_filename="x", stored_path="x", mime_type="text/plain")
+    draft = ImportedQuestionDraft(
+        id=1,
+        import_job_id=1,
+        type="single_choice",
+        stem="Choose",
+        options_json=[
+            {"label": "A", "content": "One", "is_correct": False, "sort_order": 1},
+            {"label": "B", "content": "Two", "is_correct": False, "sort_order": 2},
+        ],
+        answer_json={"label": "C"},
+    )
+
+    with pytest.raises(BadRequestError, match="option"):
+        _question_from_draft(job, draft)
+
+
 def test_import_job_upload_generates_draft_and_publishes_question(
     client: TestClient,
     monkeypatch,

@@ -1,9 +1,46 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.run/
-backend/.env
-frontend/node_modules/
-frontend/dist/
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database
+*.db
+*.sqlite3
+
+# Uploads
+uploads/
+storage/
+
+# Node
 node_modules/
-frontend/.vite/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/

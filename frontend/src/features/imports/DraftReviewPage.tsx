@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listDrafts, publishDrafts, updateDraft } from '../../api/client';
+import { batchApproveDrafts, listDrafts, publishDrafts, updateDraft } from '../../api/client';
 import type { ImportedQuestionDraft, ImportJob, QuestionOption } from '../../api/types';
 import { EmptyState } from '../../components/EmptyState';
 import { Field } from '../../components/Field';
@@ -103,6 +103,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
         answer_text: computedAnswerText(),
         difficulty: draft.difficulty,
         explanation,
+        tags: draft.tags,
         options,
         status: draft.status,
       });
@@ -139,6 +140,7 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
         answer_text: draft.answer_text,
         difficulty: draft.difficulty,
         explanation: draft.explanation,
+        tags: draft.tags,
         options: draft.options,
         status: 'approved',
       });
@@ -156,27 +158,10 @@ export function DraftReviewPage({ job, onPublished }: DraftReviewPageProps) {
     setIsApprovingAll(true);
     setError(null);
     try {
-      // Sequential for SQLite compatibility
-      const updated = [...drafts];
-      for (const draft of pendingDrafts) {
-        try {
-          const result = await updateDraft(draft.id, {
-            stem: draft.stem,
-            question_type: draft.question_type,
-            answer_json: draft.answer_json,
-            answer_text: draft.answer_text,
-            difficulty: draft.difficulty,
-            explanation: draft.explanation,
-            options: draft.options,
-            status: 'approved',
-          });
-          const idx = updated.findIndex((d) => d.id === result.id);
-          if (idx !== -1) updated[idx] = result;
-        } catch {
-          // Skip failed drafts, continue with others
-        }
-      }
-      setDrafts(updated);
+      await batchApproveDrafts(job.id);
+      // Refresh drafts list
+      const items = await listDrafts(job.id);
+      setDrafts(items);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '批量审核失败');
     } finally {

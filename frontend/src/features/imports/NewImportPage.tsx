@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileUp, FileText, ArrowLeft, Settings2, ShieldCheck, Plus, X } from 'lucide-react';
 import type { Difficulty, ImportJobCreate, QuestionBank, QuestionBankCreate, QuestionType } from '../../api/types';
+import { ErrorAlert } from '../../components/ErrorAlert';
 import { Field } from '../../components/Field';
 import { cn } from '../../lib/utils';
 
@@ -187,7 +188,7 @@ export function NewImportPage({ banks, onCreateBank, onCreate, onDone }: NewImpo
                 {files.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {files.map((f, i) => (
-                      <span key={i} className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-md bg-zinc-100 border border-black/[0.06] text-[12px] font-medium text-zinc-700">
+                      <span key={f.name + f.size} className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-md bg-zinc-100 border border-black/[0.06] text-[12px] font-medium text-zinc-700">
                         <FileText size={12} className="text-zinc-400" />
                         {f.name}
                         <button
@@ -301,12 +302,7 @@ export function NewImportPage({ banks, onCreateBank, onCreate, onDone }: NewImpo
             </div>
           </div>
 
-          {error ? (
-            <div className="mt-8 px-4 py-3 border border-red-200 rounded-md text-red-700 bg-red-50 flex items-center gap-2" role="alert">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-              <span className="text-sm font-medium">{error}</span>
-            </div>
-          ) : null}
+          {error ? <ErrorAlert message={error} /> : null}
 
           <div className="mt-10 pt-6 border-t border-black/[0.06] flex justify-end">
             <button
@@ -354,11 +350,7 @@ export function NewImportPage({ banks, onCreateBank, onCreate, onDone }: NewImpo
                 onChange={(e) => setNewBankDesc(e.target.value)}
                 placeholder="简短说明题库用途（可选）"
               />
-              {bankError && (
-                <div className="px-3 py-2 border border-red-200 rounded-md text-red-700 bg-red-50 text-[13px] font-medium" role="alert">
-                  {bankError}
-                </div>
-              )}
+              {bankError && <ErrorAlert message={bankError} />}
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   className="h-[38px] px-4 rounded-md border border-black/[0.1] text-[13px] font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors"

@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { BookOpenCheck, Settings2, Sparkles, CheckCircle2, XCircle, Eye, EyeOff, ArrowRight, ArrowLeft } from 'lucide-react';
 
-import { createPracticeSession, finishPracticeSession, listQuestions, submitPracticeAnswer } from '../../api/client';
+import { createPracticeSession, finishPracticeSession, listPracticeQuestions, submitPracticeAnswer } from '../../api/client';
 import type { PracticeAnswer, PracticeSession, Question, QuestionBank, QuestionType, WrongQuestion } from '../../api/types';
 import { EmptyState } from '../../components/EmptyState';
+import { ErrorAlert } from '../../components/ErrorAlert';
 import { LatexText } from '../../components/LatexText';
 import { PracticeResultPage } from './PracticeResultPage';
 import { getQuestionTypeLabel } from '../../lib/statusHelpers';
@@ -21,7 +22,7 @@ type PracticeMode = 'practice' | 'exam';
 
 export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: PracticePageProps) {
   const [bankId, setBankId] = useState(banks[0]?.id ? String(banks[0].id) : '');
-  const [questionCount, setQuestionCount] = useState<number | ''>('');
+  const [questionCount, setQuestionCount] = useState<number | '' | 'custom'>('');
   const [customCount, setCustomCount] = useState('');
   const [questionTypes, setQuestionTypes] = useState<QuestionType[]>([]);
   const [order, setOrder] = useState<PracticeOrder>('sequential');
@@ -56,7 +57,7 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
     setIsWorking(true);
     setError(null);
     try {
-      const allQuestions = await listQuestions(Number(bankId));
+      const allQuestions = await listPracticeQuestions(Number(bankId));
       const typeFiltered = questionTypes.length > 0
         ? allQuestions.filter((q) => questionTypes.includes(q.question_type))
         : allQuestions;
@@ -94,13 +95,16 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
     );
   }
 
+  const submittingRef = useRef<Set<number>>(new Set());
+
   function setAnswerForQuestion(questionId: number, value: string | string[]) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
   }
 
   // Practice mode: auto-reveal on answer selection for choice questions
-  async function handleAutoReveal(question: Question, value: string | string[]) {
-    if (!session) return;
+  const handleAutoReveal = useCallback(async (question: Question, value: string | string[]) => {
+    if (!session || submittingRef.current.has(question.id)) return;
+    submittingRef.current.add(question.id);
     setAnswers((prev) => ({ ...prev, [question.id]: value }));
     setError(null);
     try {
@@ -113,8 +117,10 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
       setRevealedSet((prev) => new Set(prev).add(question.id));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '提交失败');
+    } finally {
+      submittingRef.current.delete(question.id);
     }
-  }
+  }, [session]);
 
   async function handleSubmitAll() {
     if (!session) return;
@@ -130,17 +136,33 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
     setError(null);
     try {
       const allAnswers: PracticeAnswer[] = [];
-      for (const question of sessionQuestions) {
-        const saved = await submitPracticeAnswer(session.id, {
+      const questionsToSubmit = sessionQuestions.filter((q) => !submittedMap[q.id]);
+
+      // Submit all unanswered questions in parallel
+      const submitPromises = questionsToSubmit.map((question) =>
+        submitPracticeAnswer(session.id, {
           question_id: question.id,
           user_answer: answers[question.id],
           elapsed_seconds: 0,
-        });
-        allAnswers.push(saved);
+        })
+      );
+
+      const newAnswers = await Promise.all(submitPromises);
+
+      // Merge with already submitted answers
+      let newIndex = 0;
+      for (const question of sessionQuestions) {
+        if (submittedMap[question.id]) {
+          allAnswers.push(submittedMap[question.id]);
+        } else {
+          allAnswers.push(newAnswers[newIndex++]);
+        }
       }
+
       const finished = await finishPracticeSession(session.id);
       setResult({ ...finished, answers: finished.answers.length ? finished.answers : allAnswers });
       await onPracticeFinished();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '提交失败');
     } finally {
@@ -196,12 +218,7 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
           </div>
         </header>
 
-        {error ? (
-          <div className="px-4 py-3 border border-red-200 rounded-md text-red-700 bg-red-50 flex items-center gap-2" role="alert">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-            <span className="text-sm font-medium">{error}</span>
-          </div>
-        ) : null}
+        {error ? <ErrorAlert message={error} /> : null}
 
         <div className="space-y-6">
           {sessionQuestions.map((question, index) => {
@@ -260,8 +277,8 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
                     question={question}
                     answer={currentAnswer ?? ''}
                     onChange={(value) => {
-                      if (!isExamMode && !isRevealed && !isTextQuestion(question.question_type)) {
-                        // Practice mode: auto-reveal on choice selection only
+                      if (!isExamMode && !isRevealed && (question.question_type === 'single_choice' || question.question_type === 'true_false')) {
+                        // Single-choice answers are complete after one selection.
                         void handleAutoReveal(question, value);
                       } else {
                         setAnswerForQuestion(question.id, value);
@@ -276,6 +293,18 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
                     revealed={isRevealed}
                     submitted={submitted}
                   />
+                  {!isExamMode && !isRevealed && question.question_type === 'multiple_choice' && (
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center h-[36px] px-4 rounded-md bg-black text-white text-[13px] font-semibold hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!hasAnswer(currentAnswer) || submittingRef.current.has(question.id)}
+                        onClick={() => void handleAutoReveal(question, currentAnswer!)}
+                      >
+                        确认答案
+                      </button>
+                    </div>
+                  )}
                 </div>
               </article>
             );
@@ -487,12 +516,7 @@ export function PracticePage({ banks, wrongQuestions, onPracticeFinished }: Prac
             </div>
           </div>
 
-          {error ? (
-            <div className="mt-8 px-4 py-3 border border-red-200 rounded-md text-red-700 bg-red-50 flex items-center gap-2" role="alert">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-              <span className="text-sm font-medium">{error}</span>
-            </div>
-          ) : null}
+          {error ? <ErrorAlert message={error} /> : null}
 
           <div className="mt-10 flex justify-end">
             <button
@@ -531,9 +555,10 @@ function AnswerControl({
   submitted?: PracticeAnswer;
   onBlur?: () => void;
 }) {
-  const correctLabels = question.options.filter((o) => o.is_correct).map((o) => o.label ?? '');
+  const correctLabels = submitted?.correct_option_labels
+    ?? question.options.filter((option) => option.is_correct).map((option) => option.label ?? '');
 
-  if (question.question_type === 'single_choice') {
+  if (question.question_type === 'single_choice' || question.question_type === 'true_false') {
     return (
       <div className="grid gap-2">
         {question.options.map((option, index) => {

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -12,7 +12,7 @@ class QuestionBankCreate(BaseModel):
 class QuestionBankUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
-    visibility: str | None = Field(default=None, min_length=1, max_length=32)
+    visibility: Literal["private", "public"] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -30,6 +30,8 @@ class QuestionBankUpdate(BaseModel):
 class QuestionBankResponse(BaseModel):
     id: int
     owner_id: int
+    owner_nickname: str = ""
+    owner_avatar_url: str | None = None
     name: str
     description: str
     visibility: str

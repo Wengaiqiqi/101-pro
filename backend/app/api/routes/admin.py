@@ -1,14 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_admin_user, get_db
-from app.core.security import hash_password, verify_password
+from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.validators import validate_password_strength
 from app.models.global_settings import GlobalSettings
-from app.services.model_settings_service import ResolvedModelConfig, encrypt_api_key, decrypt_api_key, test_model_connection
+from app.services.model_settings_service import (
+    ResolvedModelConfig,
+    _validate_base_url,
+    decrypt_api_key,
+    encrypt_api_key,
+    test_model_connection,
+)
 from app.models.user import User
 from app.schemas.admin import AdminUserUpdate, ChangePasswordRequest, GlobalSettingsResponse, GlobalSettingsUpdate
 from app.schemas.user import UserResponse
+from app.core.security import hash_password, verify_password
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -19,10 +27,12 @@ SETTINGS_KEYS = ["model_provider", "model_base_url", "model_name", "model_api_ke
 
 @router.get("/users", response_model=list[UserResponse])
 def list_users(
+    skip: int = 0,
+    limit: int = 100,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_admin_user),
 ):
-    users = db.scalars(select(User).order_by(User.id)).all()
+    users = db.scalars(select(User).order_by(User.id).offset(skip).limit(limit)).all()
     return users
 
 
@@ -35,9 +45,9 @@ def update_user(
 ):
     user = db.get(User, user_id)
     if user is None:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise NotFoundError("用户不存在")
     if user.id == admin.id:
-        raise HTTPException(status_code=400, detail="不能修改自己的账号")
+        raise BadRequestError("不能修改自己的账号")
     if payload.is_active is not None:
         user.is_active = payload.is_active
     db.commit()
@@ -53,9 +63,9 @@ def delete_user(
 ):
     user = db.get(User, user_id)
     if user is None:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise NotFoundError("用户不存在")
     if user.id == admin.id:
-        raise HTTPException(status_code=400, detail="不能删除自己的账号")
+        raise BadRequestError("不能删除自己的账号")
     db.delete(user)
     db.commit()
 
@@ -67,10 +77,10 @@ def change_password(
     admin: User = Depends(get_admin_user),
 ):
     if not verify_password(payload.old_password, admin.password_hash):
-        raise HTTPException(status_code=400, detail="原密码错误")
-    if len(payload.new_password) < 6:
-        raise HTTPException(status_code=400, detail="新密码长度不能少于6位")
+        raise BadRequestError("原密码错误")
+    validate_password_strength(payload.new_password)
     admin.password_hash = hash_password(payload.new_password)
+    admin.password_version = (admin.password_version or 1) + 1
     db.commit()
     return {"message": "密码修改成功"}
 
@@ -90,16 +100,22 @@ def _set_setting(db: Session, key: str, value: str):
         db.add(GlobalSettings(key=key, value=value))
 
 
+def _get_settings_batch(db: Session, keys: list[str]) -> dict[str, str]:
+    rows = db.execute(select(GlobalSettings).where(GlobalSettings.key.in_(keys))).scalars().all()
+    return {row.key: row.value for row in rows}
+
+
 @router.get("/settings", response_model=GlobalSettingsResponse)
 def get_global_settings(
     db: Session = Depends(get_db),
     _admin: User = Depends(get_admin_user),
 ):
+    settings_map = _get_settings_batch(db, SETTINGS_KEYS)
     return GlobalSettingsResponse(
-        model_provider=_get_setting(db, "model_provider"),
-        model_base_url=_get_setting(db, "model_base_url"),
-        model_name=_get_setting(db, "model_name"),
-        has_api_key=bool(_get_setting(db, "model_api_key")),
+        model_provider=settings_map.get("model_provider", ""),
+        model_base_url=settings_map.get("model_base_url", ""),
+        model_name=settings_map.get("model_name", ""),
+        has_api_key=bool(settings_map.get("model_api_key", "")),
     )
 
 
@@ -109,21 +125,27 @@ def update_global_settings(
     db: Session = Depends(get_db),
     _admin: User = Depends(get_admin_user),
 ):
+    updates = {}
     if payload.model_provider is not None:
-        _set_setting(db, "model_provider", payload.model_provider.strip())
+        updates["model_provider"] = payload.model_provider.strip()
     if payload.model_base_url is not None:
-        _set_setting(db, "model_base_url", payload.model_base_url.strip().rstrip("/"))
+        base_url = payload.model_base_url.strip().rstrip("/")
+        _validate_base_url(base_url)
+        updates["model_base_url"] = base_url
     if payload.model_name is not None:
-        _set_setting(db, "model_name", payload.model_name.strip())
+        updates["model_name"] = payload.model_name.strip()
     if payload.model_api_key is not None:
-        encrypted = encrypt_api_key(payload.model_api_key.strip())
-        _set_setting(db, "model_api_key", encrypted)
+        updates["model_api_key"] = encrypt_api_key(payload.model_api_key.strip())
+    for key, value in updates.items():
+        _set_setting(db, key, value)
     db.commit()
+    # Use the values we just set instead of re-querying
+    settings_map = _get_settings_batch(db, SETTINGS_KEYS)
     return GlobalSettingsResponse(
-        model_provider=_get_setting(db, "model_provider"),
-        model_base_url=_get_setting(db, "model_base_url"),
-        model_name=_get_setting(db, "model_name"),
-        has_api_key=bool(_get_setting(db, "model_api_key")),
+        model_provider=settings_map.get("model_provider", ""),
+        model_base_url=settings_map.get("model_base_url", ""),
+        model_name=settings_map.get("model_name", ""),
+        has_api_key=bool(settings_map.get("model_api_key", "")),
     )
 
 

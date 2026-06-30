@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CheckCircle2, RotateCcw, XCircle, Award, Target, XOctagon } from 'lucide-react';
 import type { PracticeSession, Question } from '../../api/types';
 import { LatexText } from '../../components/LatexText';
@@ -21,7 +21,7 @@ const tabs: { key: TabKey; label: string; icon: typeof CheckCircle2 }[] = [
 
 export function PracticeResultPage({ session, questions, onRestart }: PracticeResultPageProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('all');
-  const questionById = new Map(questions.map((q) => [q.id, q]));
+  const questionById = useMemo(() => new Map(questions.map((q) => [q.id, q])), [questions]);
   const correctCount = session.answers.filter((a) => a.is_correct).length;
   const wrongCount = session.answers.length - correctCount;
 
@@ -148,7 +148,7 @@ export function PracticeResultPage({ session, questions, onRestart }: PracticeRe
                               ? answer.user_answer_json.value
                               : [answer.user_answer_json.value];
                             const isUserChoice = userAnswers.includes(label);
-                            const isCorrect = opt.is_correct;
+                            const isCorrect = answer.correct_option_labels?.includes(label) ?? opt.is_correct;
 
                             return (
                               <div
@@ -183,20 +183,20 @@ export function PracticeResultPage({ session, questions, onRestart }: PracticeRe
                             <span className="text-zinc-400 mr-2">你的答案：</span>
                             {formatAnswer(answer.user_answer_json.value)}
                           </div>
-                          {question.answer_text && (
+                          {(answer.correct_answer_text ?? question.answer_text) && (
                             <div className="mt-1.5 inline-block px-3 py-1.5 rounded-md bg-emerald-50 border border-emerald-200/60 text-[13px] text-emerald-700 font-medium">
                               <span className="text-emerald-500 mr-2">正确答案：</span>
-                              {question.answer_text}
+                              {answer.correct_answer_text ?? question.answer_text}
                             </div>
                           )}
                         </div>
                       )}
 
                       {/* Explanation */}
-                      {question?.explanation ? (
+                      {(answer.explanation ?? question?.explanation) ? (
                         <div className="mt-3 p-3.5 rounded-lg bg-zinc-50 border border-black/[0.04] text-[13px] text-zinc-600 leading-relaxed">
                           <strong className="text-black font-semibold mr-2">解析：</strong>
-                          <LatexText text={question.explanation} />
+                          <LatexText text={(answer.explanation ?? question?.explanation)!} />
                         </div>
                       ) : null}
                     </div>

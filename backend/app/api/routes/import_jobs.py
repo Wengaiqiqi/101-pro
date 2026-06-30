@@ -5,6 +5,8 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.import_job import (
+    BatchApproveDraftsRequest,
+    BatchApproveDraftsResponse,
     ImportedQuestionDraftResponse,
     ImportedQuestionDraftUpdate,
     ImportJobResponse,
@@ -83,6 +85,16 @@ def list_import_drafts(
     db: Session = Depends(get_db),
 ) -> list[ImportedQuestionDraftResponse]:
     return import_service.list_drafts(db, current_user, import_job_id)
+
+
+@router.post("/import-jobs/{import_job_id}/drafts/approve-all", response_model=BatchApproveDraftsResponse)
+def batch_approve_drafts(
+    import_job_id: int,
+    payload: BatchApproveDraftsRequest = BatchApproveDraftsRequest(),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BatchApproveDraftsResponse:
+    return import_service.batch_approve_drafts(db, current_user, import_job_id, payload.draft_ids)
 
 
 @router.put("/import-drafts/{draft_id}", response_model=ImportedQuestionDraftResponse)

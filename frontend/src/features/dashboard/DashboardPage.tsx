@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, FileInput, NotebookTabs, PlayCircle, Activity, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -28,6 +28,7 @@ function formatElapsed(seconds: number): string {
 interface DashboardPageProps {
   banks: QuestionBank[];
   importJobs: ImportJob[];
+  // TODO: Implement recentPractice data fetching in DashboardWrapper
   recentPractice?: PracticeSession | null;
   wrongQuestionCount?: number;
   activityStats?: ActivityStats | null;
@@ -56,7 +57,7 @@ export function DashboardPage({
       setLoadingExpanded(true);
       getActivityStats(30)
         .then(setExpandedStats)
-        .catch(() => {})
+        .catch(() => setExpandedStats(null))
         .finally(() => setLoadingExpanded(false));
     }
   }, [expanded, expandedStats]);
@@ -166,6 +167,7 @@ export function DashboardPage({
 function ActivityLineChart({ daily, maxQuestions, totalDays, expanded }: { daily: { date: string; question_count: number; correct_count: number }[]; maxQuestions: number; totalDays: number; expanded: boolean }) {
   const n = daily.length;
   const H = expanded ? 320 : 200;
+  const gradientId = useId();
 
   // All positions in percentages
   const pts = daily.map((d, i) => ({
@@ -198,11 +200,11 @@ function ActivityLineChart({ daily, maxQuestions, totalDays, expanded }: { daily
       <div className="relative w-full transition-all duration-500 ease-in-out" style={{ height: H }}>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full overflow-visible">
           <defs>
-            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={`${gradientId}-area`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#6366f1" stopOpacity={0.25} />
               <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
             </linearGradient>
-            <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+            <linearGradient id={`${gradientId}-line`} x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%" stopColor="#818cf8" />
               <stop offset="50%" stopColor="#6366f1" />
               <stop offset="100%" stopColor="#4f46e5" />
@@ -217,12 +219,12 @@ function ActivityLineChart({ daily, maxQuestions, totalDays, expanded }: { daily
           {/* Area and Line */}
           {pts.length > 1 && (
             <>
-              <path d={areaPath} fill="url(#areaGrad)" className="animate-in fade-in duration-1000" />
-              <path d={linePath} fill="none" stroke="url(#lineGrad)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-sm" />
+              <path d={areaPath} fill={`url(#${gradientId}-area)`} className="animate-in fade-in duration-1000" />
+              <path d={linePath} fill="none" stroke={`url(#${gradientId}-line)`} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-sm" />
             </>
           )}
           {pts.length === 1 && (
-            <path d={`M0,${pts[0].yPct} L100,${pts[0].yPct}`} fill="none" stroke="url(#lineGrad)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-sm" />
+            <path d={`M0,${pts[0].yPct} L100,${pts[0].yPct}`} fill="none" stroke={`url(#${gradientId}-line)`} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-sm" />
           )}
         </svg>
         

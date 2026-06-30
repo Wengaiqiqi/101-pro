@@ -11,7 +11,7 @@ import { DraftReviewPage } from '../features/imports/DraftReviewPage';
 const currentUser: User = {
   id: 1,
   username: 'alice',
-  email: 'alice@example.com',
+  nickname: 'Alice',
   role: 'student',
   is_active: true,
   created_at: '2026-01-01T00:00:00Z'
@@ -54,6 +54,7 @@ describe('import flow', () => {
       bank_id: 20,
       filename: 'questions.pdf',
       status: 'reviewing',
+      progress: 90,
       question_count: 1,
       question_types: ['single_choice'],
       difficulty: 'medium',
@@ -99,7 +100,7 @@ describe('import flow', () => {
       }
 
       if (url === '/api/import-jobs' && method === 'GET') {
-        return jsonResponse(jobs);
+        return jsonResponse(jobs.length > 0 ? [completedJob] : jobs);
       }
 
       if (url === '/api/wrong-questions' && method === 'GET') {
@@ -132,7 +133,7 @@ describe('import flow', () => {
 
     await user.type(screen.getByLabelText('用户名'), 'alice');
     await user.type(screen.getByLabelText('密码'), 'correct-password');
-    await user.click(screen.getByRole('button', { name: '登录' }));
+    await user.click(screen.getByRole('button', { name: '登录系统' }));
 
     await screen.findByRole('heading', { name: '工作台概览' });
 
@@ -154,6 +155,7 @@ describe('import flow', () => {
     );
     expect(await screen.findByText('待审核')).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: /查看/ }));
     expect(await screen.findByRole('button', { name: '审核草稿' }, { timeout: 3500 })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '审核草稿' }));
 
@@ -173,6 +175,7 @@ describe('import flow', () => {
         bank_id: 20,
         filename: 'exam.pdf',
         status: 'reviewing',
+        progress: 90,
         question_count: 1,
         question_types: [questionType],
         difficulty: 'medium',

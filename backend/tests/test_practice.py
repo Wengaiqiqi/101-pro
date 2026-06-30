@@ -124,6 +124,8 @@ def test_practice_session_api_flow_and_owner_scope(client: TestClient) -> None:
     assert wrong_answer["question_id"] == wrong_question_id
     assert wrong_answer["user_answer_json"] == {"value": "A"}
     assert wrong_answer["is_correct"] is False
+    assert wrong_answer["correct_answer_text"] == "B"
+    assert wrong_answer["correct_option_labels"] == ["B"]
 
     wrong_answer_update_response = client.post(
         f"/api/practice-sessions/{session_id}/answers",
@@ -199,3 +201,18 @@ def test_practice_session_api_flow_and_owner_scope(client: TestClient) -> None:
         assert rows[0].question_id == wrong_question_id
     finally:
         db.close()
+
+
+def test_practice_question_list_redacts_answers(client: TestClient) -> None:
+    token = register_and_login(client, "reader", "reader@example.com")
+    headers = _headers(token)
+    bank_id = _create_bank(client, token)
+    _create_question(client, token, bank_id, answer_text="B", stem="Hidden answer")
+
+    response = client.get(f"/api/question-banks/{bank_id}/practice-questions", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()[0]
+    assert "answer_text" not in payload
+    assert "explanation" not in payload
+    assert all("is_correct" not in option for option in payload["options"])

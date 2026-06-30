@@ -11,6 +11,8 @@ import {
   Shield,
   Users,
   Settings2,
+  Library,
+  UserCog,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
@@ -35,7 +37,9 @@ const navItems: NavItem[] = [
   { to: '/imports', label: '文档解析', icon: FileInput },
   { to: '/practice', label: '专属练习', icon: Target },
   { to: '/mistakes', label: '错题复盘', icon: NotebookTabs },
+  { to: '/explore', label: '题集广场', icon: Library },
   { to: '/models', label: '引擎设置', icon: Bot },
+  { to: '/profile', label: '个人设置', icon: UserCog },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -127,15 +131,18 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
 
         <div className="p-4 border-t border-black/[0.04]">
           <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-zinc-50 transition-colors border border-transparent hover:border-black/[0.04]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex items-center justify-center w-7 h-7 rounded-full bg-zinc-200/50 text-zinc-700 font-bold text-xs shadow-inner ring-1 ring-black/[0.04]">
-                {user.username.charAt(0).toUpperCase()}
-              </div>
+            <NavLink to="/profile" className="flex items-center gap-2.5 min-w-0 flex-1">
+              {user.avatar_url ? (
+                <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover ring-1 ring-black/[0.04]" />
+              ) : (
+                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-zinc-200/50 text-zinc-700 font-bold text-xs shadow-inner ring-1 ring-black/[0.04]">
+                  {(user.nickname || user.username).charAt(0).toUpperCase()}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
-                <div className="text-[12px] font-semibold text-zinc-900 truncate leading-none">{user.username}</div>
-                <div className="text-[11px] text-zinc-500 truncate mt-1 leading-none">{user.email || ''}</div>
+                <div className="text-[12px] font-semibold text-zinc-900 truncate leading-none">{user.nickname || user.username}</div>
               </div>
-            </div>
+            </NavLink>
             <button
               className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md text-zinc-400 hover:text-black hover:bg-zinc-200/50 transition-colors"
               type="button"
@@ -171,7 +178,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
       
       {/* Mobile Bottom Nav */}
       <div className="md:hidden fixed bottom-0 left-0 w-full z-50 bg-white/80 backdrop-blur-xl border-t border-black/[0.06] flex items-center justify-around px-2 py-2 pb-safe">
-         {navItems.map((item) => (
+         {navItems.slice(0, 5).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -187,6 +194,21 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
               )}
             </NavLink>
           ))}
+          {user.role === 'admin' && (
+            <NavLink
+              to="/admin/users"
+              className={({ isActive }) =>
+                cn(
+                  'flex flex-col items-center justify-center w-12 h-12 gap-1 rounded-xl transition-colors',
+                  isActive ? 'text-black' : 'text-zinc-400'
+                )
+              }
+            >
+              {({ isActive }) => (
+                <Shield size={20} strokeWidth={isActive ? 2.5 : 2} />
+              )}
+            </NavLink>
+          )}
       </div>
     </div>
   );

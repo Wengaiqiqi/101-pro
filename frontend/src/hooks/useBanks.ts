@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, createQuestionBank as apiCreateBank, deleteQuestionBank as apiDeleteBank, listQuestionBanks } from '../api/client';
+import { createQuestionBank as apiCreateBank, deleteQuestionBank as apiDeleteBank, listQuestionBanks } from '../api/client';
 import type { QuestionBank, QuestionBankCreate } from '../api/types';
-import { clearAuthState } from '../features/auth/authStore';
 
 export function useBanks(userId: number | undefined) {
   const [banks, setBanks] = useState<QuestionBank[]>([]);
@@ -23,10 +22,6 @@ export function useBanks(userId: number | undefined) {
       })
       .catch((caught) => {
         if (!isMounted) return;
-        if (caught instanceof ApiError && caught.status === 401) {
-          clearAuthState();
-          return;
-        }
         setError(caught instanceof Error ? caught.message : '题库加载失败');
       })
       .finally(() => {
@@ -39,8 +34,13 @@ export function useBanks(userId: number | undefined) {
   }, [userId]);
 
   const refreshBanks = useCallback(async () => {
-    const items = await listQuestionBanks();
-    setBanks(items);
+    try {
+      const items = await listQuestionBanks();
+      setBanks(items);
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '题库刷新失败');
+    }
   }, []);
 
   const createBank = useCallback(async (payload: QuestionBankCreate) => {

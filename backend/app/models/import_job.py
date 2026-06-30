@@ -68,7 +68,7 @@ class ImportedQuestionDraft(Base):
     options_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, server_default="[]")
     answer_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default="{}")
     explanation: Mapped[str] = mapped_column(Text, default="", server_default="")
-    difficulty: Mapped[str] = mapped_column(String(32), default="normal", server_default="normal")
+    difficulty: Mapped[str] = mapped_column(String(32), default="medium", server_default="medium")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from app.services.document_extractors import (
     _should_split_pdf_page,
     extract_pdf_pages,
@@ -31,6 +33,7 @@ def test_split_requires_wide_page_and_two_page_markers() -> None:
     )
 
 
+@pytest.mark.skipif(not PDF_PATH.exists(), reason="optional exam PDF fixture is not present")
 def test_exam_pdf_becomes_four_ordered_logical_pages() -> None:
     pages = extract_pdf_pages(str(PDF_PATH), resolution=120)
 
@@ -44,6 +47,7 @@ def test_exam_pdf_becomes_four_ordered_logical_pages() -> None:
     assert all(page.image_png.startswith(b"\x89PNG\r\n\x1a\n") for page in pages)
 
 
+@pytest.mark.skipif(not PDF_PATH.exists(), reason="optional exam PDF fixture is not present")
 def test_exam_fixture_declares_correct_section_oracle() -> None:
     pages = extract_pdf_pages(str(PDF_PATH), resolution=120)
     counts = parse_declared_counts([page.text for page in pages])

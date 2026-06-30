@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PracticeSessionCreate(BaseModel):
@@ -23,10 +25,42 @@ class PracticeAnswerResponse(BaseModel):
     user_answer_json: dict[str, Any]
     is_correct: bool
     feedback: str | None = None
+    correct_answer_text: str | None = None
+    correct_option_labels: list[str] = Field(default_factory=list)
+    explanation: str = ""
     elapsed_seconds: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def attach_answer_reveal(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return value
+        question = getattr(value, "question", None)
+        if question is None:
+            return value
+        question_type = str(getattr(question, "type", ""))
+        answer_text = str(getattr(question, "answer_text", ""))
+        labels = (
+            [part for part in re.split(r"[\s,|]+", answer_text) if part]
+            if question_type in {"single_choice", "multiple_choice", "true_false"}
+            else []
+        )
+        return {
+            "id": value.id,
+            "session_id": value.session_id,
+            "question_id": value.question_id,
+            "user_answer_json": value.user_answer_json,
+            "is_correct": value.is_correct,
+            "feedback": value.feedback,
+            "correct_answer_text": answer_text,
+            "correct_option_labels": labels,
+            "explanation": str(getattr(question, "explanation", "")),
+            "elapsed_seconds": value.elapsed_seconds,
+            "created_at": value.created_at,
+        }
 
 
 class PracticeSessionResponse(BaseModel):

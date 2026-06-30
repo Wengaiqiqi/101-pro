@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("DATABASE_URL", "sqlite://")
+os.environ.setdefault("DISABLE_RATE_LIMIT", "1")
 
 from app.db.base import Base
 from app.db.session import get_db
@@ -51,10 +52,10 @@ def register_and_login(
 ) -> str:
     client.post(
         "/api/auth/register",
-        json={"username": username, "email": email, "password": password},
+        json={"username": username, "password": password},
     )
     response = client.post(
         "/api/auth/login",
-        json={"username_or_email": username, "password": password},
+        json={"username": username, "password": password},
     )
     return response.json()["access_token"]

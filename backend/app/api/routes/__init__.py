@@ -1,4 +1,4 @@
-from app.api.routes import admin, auth, health, import_jobs, model_settings, practice, question_banks, questions
+from app.api.routes import admin, auth, health, import_jobs, model_settings, practice, question_banks, questions, users
 
 routers = [
     health.router,
@@ -9,4 +9,5 @@ routers = [
     questions.router,
     import_jobs.router,
     practice.router,
+    users.router,
 ]

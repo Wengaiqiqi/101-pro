@@ -10,6 +10,7 @@ from app.db.base import Base
 class QuestionType(str, enum.Enum):
     SINGLE_CHOICE = "single_choice"
     MULTIPLE_CHOICE = "multiple_choice"
+    TRUE_FALSE = "true_false"
     FILL_BLANK = "fill_blank"
     SHORT_ANSWER = "short_answer"
 
