@@ -10,7 +10,7 @@ $backendRoot = Join-Path $repoRoot "backend"
 $frontendRoot = Join-Path $repoRoot "frontend"
 $runRoot = Join-Path $repoRoot ".run"
 
-Write-Host "[101 Pro] Starting development environment..." -ForegroundColor Cyan
+Write-Host "[W&W刷题] Starting development environment..." -ForegroundColor Cyan
 
 # ── Prerequisites ─────────────────────────────────────────────────
 $pythonCommand = Get-Command "python" -ErrorAction SilentlyContinue
@@ -28,7 +28,7 @@ if ($null -eq $nodeCommand) {
 if ($UseDocker) {
     $env:IMPORT_QUEUE_MODE = "celery"
 } else {
-    $sqlitePath = (Join-Path $runRoot "101-pro.db").Replace("\", "/")
+    $sqlitePath = (Join-Path $runRoot "w-w-shuati.db").Replace("\", "/")
     $env:DATABASE_URL = "sqlite:///$sqlitePath"
     $env:IMPORT_QUEUE_MODE = "local"
 }
@@ -36,7 +36,7 @@ if ($UseDocker) {
 $envPath = Join-Path $backendRoot ".env"
 if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
     Copy-Item -LiteralPath (Join-Path $backendRoot ".env.example") -Destination $envPath
-    Write-Host "[101 Pro] Created backend/.env from example." -ForegroundColor Yellow
+    Write-Host "[W&W刷题] Created backend/.env from example." -ForegroundColor Yellow
 }
 
 # ── Install dependencies ─────────────────────────────────────────
@@ -47,7 +47,7 @@ if (-not $SkipInstall) {
     $savedHash = if (Test-Path -LiteralPath $backendStamp) { (Get-Content -LiteralPath $backendStamp -Raw).Trim() } else { "" }
 
     if ($currentHash -ne $savedHash) {
-        Write-Host "[101 Pro] Installing backend dependencies..." -ForegroundColor Cyan
+        Write-Host "[W&W刷题] Installing backend dependencies..." -ForegroundColor Cyan
         Push-Location $backendRoot
         cmd /c "python -m pip install -e .[dev] 2>&1"
         if ($LASTEXITCODE -ne 0) { throw "Backend dependency installation failed." }
@@ -62,7 +62,7 @@ if (-not $SkipInstall) {
     $viteCmd = Join-Path $frontendRoot "node_modules\.bin\vite.cmd"
 
     if ($currentHash -ne $savedHash -or -not (Test-Path -LiteralPath $viteCmd)) {
-        Write-Host "[101 Pro] Installing frontend dependencies..." -ForegroundColor Cyan
+        Write-Host "[W&W刷题] Installing frontend dependencies..." -ForegroundColor Cyan
         Push-Location $frontendRoot
         cmd /c "npm install 2>&1"
         if ($LASTEXITCODE -ne 0) { throw "Frontend dependency installation failed." }
@@ -79,7 +79,7 @@ $frontendCmdFile = Join-Path $repoRoot "frontend.cmd"
 Start-Process "cmd.exe" -ArgumentList "/k `"$backendCmdFile`""
 
 # Wait for backend to be ready
-Write-Host "[101 Pro] Waiting for backend to start..." -ForegroundColor Cyan
+Write-Host "[W&W刷题] Waiting for backend to start..." -ForegroundColor Cyan
 $backendReady = $false
 for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
@@ -92,13 +92,13 @@ for ($i = 0; $i -lt 30; $i++) {
     } catch { }
 }
 if ($backendReady) {
-    Write-Host "[101 Pro] Backend is ready!" -ForegroundColor Green
+    Write-Host "[W&W刷题] Backend is ready!" -ForegroundColor Green
 } else {
-    Write-Host "[101 Pro] Backend may not be ready yet, continuing..." -ForegroundColor Yellow
+    Write-Host "[W&W刷题] Backend may not be ready yet, continuing..." -ForegroundColor Yellow
 }
 
 if (-not $UseDocker) {
-    Start-Process "cmd.exe" -ArgumentList "/k `"cd /d `"$backendRoot`" && title 101 Pro - Local Worker && python -m app.tasks.local_worker`""
+    Start-Process "cmd.exe" -ArgumentList "/v:on /k `"cd /d `"$backendRoot`" && set `"T=W&W刷题`" && title !T! - Local Worker && python -m app.tasks.local_worker`""
     Start-Sleep -Milliseconds 500
 }
 
@@ -106,7 +106,7 @@ Start-Process "cmd.exe" -ArgumentList "/k `"$frontendCmdFile`""
 
 # ── Summary ──────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "[101 Pro] Development environment started!" -ForegroundColor Green
+Write-Host "[W&W刷题] Development environment started!" -ForegroundColor Green
 Write-Host "  Backend:  http://127.0.0.1:8000" -ForegroundColor White
 Write-Host "  Frontend: http://127.0.0.1:5173" -ForegroundColor White
 Write-Host "  API Docs: http://127.0.0.1:8000/docs" -ForegroundColor White

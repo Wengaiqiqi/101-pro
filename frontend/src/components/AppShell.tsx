@@ -61,7 +61,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
             <Command size={14} />
           </div>
           <div>
-            <strong className="block text-[14px] font-semibold text-black tracking-tight leading-none">101 Pro</strong>
+            <strong className="block text-[14px] font-semibold text-black tracking-tight leading-none">W&W刷题</strong>
             <span className="block text-[11px] text-zinc-500 font-medium mt-1">Study Workspace</span>
           </div>
         </div>
@@ -171,7 +171,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
           <div className="flex items-center justify-center w-6 h-6 rounded bg-black text-white">
             <Command size={12} />
           </div>
-          <strong className="text-[13px] font-semibold text-black tracking-tight">101 Pro</strong>
+          <strong className="text-[13px] font-semibold text-black tracking-tight">W&W刷题</strong>
         </div>
         <button className="text-zinc-500" onClick={onLogout}><LogOut size={16} /></button>
       </div>

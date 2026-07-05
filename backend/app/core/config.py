@@ -4,9 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Question Bank Platform"
+    app_name: str = "W&W刷题"
     app_env: str = "development"
-    database_url: str = "sqlite:///./101-pro.db"
+    database_url: str = "sqlite:///./w-w-shuati.db"
     import_queue_mode: str = "local"
     jwt_secret_key: str = "change-me-in-development"
     jwt_algorithm: str = "HS256"

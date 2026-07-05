@@ -67,7 +67,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
             {isRegistering ? '创建你的账号' : '欢迎回来'}
           </h1>
           <p className="m-0 text-[15px] text-slate-500 font-medium">
-            101 Pro · 专属刷题系统
+            W&W刷题 · 专属刷题系统
           </p>
         </div>
 

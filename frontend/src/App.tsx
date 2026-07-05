@@ -152,7 +152,7 @@ export function App() {
   if (isBooting) {
     return (
       <main className="min-h-screen grid place-items-center p-6 bg-slate-50">
-        <span className="text-slate-500 font-semibold">正在进入 101 Pro</span>
+        <span className="text-slate-500 font-semibold">正在进入 W&W刷题</span>
       </main>
     );
   }
