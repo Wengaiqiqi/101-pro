@@ -1,6 +1,6 @@
 # W&W刷题
 
-## 功能演示
+## 宣传视频
 
 <video src="https://github.com/user-attachments/assets/2b2206f8-2f00-48b1-81d2-d5ce2697c351" controls width="720"></video>
 
