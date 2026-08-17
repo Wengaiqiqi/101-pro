@@ -2,7 +2,7 @@
 
 ## 功能演示
 
-<video src="demo.mp4" controls width="720"></video>
+<video src="https://github.com/user-attachments/assets/2b2206f8-2f00-48b1-81d2-d5ce2697c351" controls width="720"></video>
 
 W&W刷题是一个多用户题库应用。每个账户拥有独立的题库，可以导入 PDF 或 DOCX 文档，审阅大模型生成的草稿，刷题练习（单选/多选/判断/填空/简答），维护错题本，浏览和 Fork 公开题库，并配置个人 OpenAI 兼容的模型服务商。
 
